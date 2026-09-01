@@ -9,9 +9,9 @@ export const ApiPaths = {
   book: (id: number | string) => `/books/${id}`,
   bookFile: (id: number | string) => `/books/${id}/file`,
 
-  sessionsForBook: (bookId: number) => `/books/${bookId}/sessions`,
-  session: (id: number) => `/sessions/${id}`,
-  messages: (sessionId: number) => `/sessions/${sessionId}/messages`,
+  sessionsForBook: (bookId: number | string) => `/books/${bookId}/sessions`,
+  session: (id: number | string) => `/sessions/${id}`,
+  messages: (sessionId: number | string) => `/sessions/${sessionId}/messages`,
 
   chatStream: '/chat/stream',
 

@@ -8,6 +8,8 @@ import type { DataSource } from 'typeorm'
 import { API_PREFIX, ApiPaths } from '@reading/shared'
 import { errorHandler, notFound } from './middleware/error'
 import { createBooksRouter } from './routes/books'
+import { createSessionsRouter } from './routes/sessions'
+import { createChatRouter } from './routes/chat'
 import type { AppConfig } from './config'
 
 export interface AppContext {
@@ -42,6 +44,10 @@ export function createApp(context: AppContext): express.Express {
 
   // M4: 书籍模块
   api.use(createBooksRouter(context))
+
+  // M8: 会话与消息 + 聊天流式
+  api.use(createSessionsRouter(context))
+  api.use(createChatRouter(context))
 
   app.use(API_PREFIX, api)
 

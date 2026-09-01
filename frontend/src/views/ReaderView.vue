@@ -80,30 +80,46 @@
       >
         {{ selActive ? '取消框选' : '框选' }}
       </el-button>
+
+      <el-button
+        size="small"
+        @click="showChat = !showChat"
+      >
+        {{ showChat ? '收起聊天' : '聊天' }}
+      </el-button>
     </div>
 
-    <main
-      v-loading="loading"
-      class="reader-main"
-    >
-      <PdfViewer
-        v-if="src && !loadError"
-        ref="viewerRef"
-        :src="src"
-        @page-count="onPageCount"
-        @page-number="page = $event"
-      />
-      <el-empty
-        v-else
-        description="无法加载书籍"
-      />
-      <SelectionOverlay
-        v-if="src && !loadError"
-        :active="selActive"
-        @selection="onSelection"
-        @cancel="selActive = false"
-      />
-    </main>
+    <div class="reader-body">
+      <main
+        v-loading="loading"
+        class="reader-main"
+      >
+        <PdfViewer
+          v-if="src && !loadError"
+          ref="viewerRef"
+          :src="src"
+          @page-count="onPageCount"
+          @page-number="page = $event"
+        />
+        <el-empty
+          v-else
+          description="无法加载书籍"
+        />
+        <SelectionOverlay
+          v-if="src && !loadError"
+          :active="selActive"
+          @selection="onSelection"
+          @cancel="selActive = false"
+        />
+      </main>
+
+      <aside
+        v-if="showChat"
+        class="reader-chat"
+      >
+        <ChatPanel />
+      </aside>
+    </div>
   </div>
 </template>
 
@@ -116,12 +132,15 @@ import PdfViewer from '@/components/reader/PdfViewer.vue'
 import SelectionOverlay, {
   type SelectionResult,
 } from '@/components/reader/SelectionOverlay.vue'
+import ChatPanel from '@/components/chat/ChatPanel.vue'
 import { getBook } from '@/api/books'
 import { bookFileUrl } from '@/api/client'
 import { useReaderStore } from '@/stores/reader'
+import { useChatStore } from '@/stores/chat'
 
 const route = useRoute()
 const readerStore = useReaderStore()
+const chatStore = useChatStore()
 
 const bookId = computed(() => Number(route.params.bookId))
 const viewerRef = ref<InstanceType<typeof PdfViewer> | null>(null)
@@ -132,6 +151,7 @@ const src = ref('')
 const loading = ref(false)
 const loadError = ref('')
 const selActive = ref(false)
+const showChat = ref(true)
 
 /** 框选完成：存入 store 供聊天发送时读取，并退出截图模式 */
 function onSelection(sel: SelectionResult): void {
@@ -155,10 +175,13 @@ async function goTo(n: number): Promise<void> {
 async function loadBook(): Promise<void> {
   loading.value = true
   loadError.value = ''
+  chatStore.reset()
   try {
     const book = await getBook(bookId.value)
     readerStore.setBook(book)
     src.value = bookFileUrl(book.id)
+    // 重开同一本书：恢复该书的会话与历史消息
+    await chatStore.loadSessions(book.id)
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -225,9 +248,23 @@ onMounted(loadBook)
   margin-left: auto;
 }
 
+.reader-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .reader-main {
   flex: 1;
   min-height: 0;
   position: relative;
+  min-width: 0;
+}
+
+.reader-chat {
+  width: 380px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--el-border-color-light);
+  min-height: 0;
 }
 </style>
