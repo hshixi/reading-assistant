@@ -12,8 +12,12 @@
   },
   "dependencies": {
     "@reading/shared": "*",
+    "better-sqlite3": "^12.11.1",
     "cors": "^2.8.5",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "mysql2": "^3.24.2",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^1.1.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

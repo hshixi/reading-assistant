@@ -4,16 +4,27 @@
  */
 import express from 'express'
 import cors from 'cors'
+import type { DataSource } from 'typeorm'
 import { API_PREFIX, ApiPaths } from '@reading/shared'
 import { errorHandler, notFound } from './middleware/error'
 import type { AppConfig } from './config'
 
-export function createApp(_config: AppConfig): express.Express {
+export interface AppContext {
+  config: AppConfig
+  dataSource: DataSource
+}
+
+export function createApp(context: AppContext): express.Express {
+  const { dataSource } = context
   const app = express()
 
   app.disable('x-powered-by')
   app.use(cors({ origin: '*' }))
   app.use(express.json({ limit: '1mb' }))
+
+  // 供路由按需取 DataSource / Repository，避免循环依赖
+  app.locals.db = dataSource
+  app.locals.config = context.config
 
   const api = express.Router()
 
