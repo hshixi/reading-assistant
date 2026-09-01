@@ -38,4 +38,9 @@ export async function checkHealth(): Promise<HealthResponse> {
   return (await res.json()) as HealthResponse
 }
 
+/** 书籍文件下载地址（pdf.js 直接拉取，依赖后端 Range 支持） */
+export function bookFileUrl(id: number): string {
+  return `${baseUrl()}${ApiPaths.bookFile(id)}`
+}
+
 export { ApiPaths }

@@ -20,7 +20,13 @@ export function createApp(context: AppContext): express.Express {
   const app = express()
 
   app.disable('x-powered-by')
-  app.use(cors({ origin: '*' }))
+  // prod 下渲染层为 file://，pdf.js 跨源拉书需读 Range/Content-Range 等响应头
+  app.use(
+    cors({
+      origin: '*',
+      exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length', 'Content-Disposition'],
+    }),
+  )
   app.use(express.json({ limit: '1mb' }))
 
   // 供路由按需取 DataSource / Repository，避免循环依赖
