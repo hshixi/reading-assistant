@@ -1,17 +1,21 @@
 /**
- * 聊天流式路由（M8）：
+ * 聊天流式路由（M8 骨架，M9 接入真实 DeepSeek）：
  *  POST /api/chat/stream —— SSE 流式回复
  *
  * 流式落库策略：用户消息在发起流前落库；助手消息先插占位，流结束一次 UPDATE。
  * SSE 事件协议（shared/types.ts 已定）：
  *   meta {sessionId, messageId} / delta {text} / save {kind,id} / done {} / error {message}
+ *
+ * AI 来源：默认走真实 DeepSeek；设 AI_MOCK=1 时退回 M8 的 mock 打字机（离线开发/测试用）。
  */
 import { Router, type Request, type Response, type NextFunction } from 'express'
-import type { ChatRequest, SseError, SseMeta } from '@reading/shared'
+import type { ChatRequest, SseMeta } from '@reading/shared'
 import { ApiPaths } from '@reading/shared'
 import { getRepository } from '../db'
 import { Book, ChatMessage, ChatSession } from '../db/entities'
 import { streamAiChunks } from '../services/chat-provider'
+import { isAbortError, streamDeepSeek, type DeepSeekInput } from '../services/deepseek'
+import { getAiSettings } from '../services/ai-settings'
 import { ApiError } from '../middleware/error'
 import type { AppContext } from '../app'
 
@@ -25,8 +29,9 @@ function defaultTitle(message: string): string {
   return t.length > 20 ? `${t.slice(0, 20)}…` : t
 }
 
-export function createChatRouter(_context: AppContext): Router {
+export function createChatRouter(context: AppContext): Router {
   const router = Router()
+  const useMock = process.env.AI_MOCK === '1'
 
   router.post(ApiPaths.chatStream, async (req: Request, res: Response, next: NextFunction) => {
     const body = (req.body ?? {}) as ChatRequest
@@ -35,6 +40,12 @@ export function createChatRouter(_context: AppContext): Router {
       next(new ApiError(400, 'BAD_CHAT_REQUEST', '缺少 bookId 或 message'))
       return
     }
+
+    // 客户端断开（停止/切页）时中止底层 AI 请求
+    const reqCtrl = new AbortController()
+    res.on('close', () => {
+      if (!res.writableEnded) reqCtrl.abort()
+    })
 
     try {
       // 1. 校验书籍
@@ -55,15 +66,21 @@ export function createChatRouter(_context: AppContext): Router {
         )
       }
 
-      // 3. 用户消息先落库
+      // 2.5 AI 配置在落库前解析：未配置 key 直接报错，避免产生孤儿占位消息
+      const aiSettings = useMock ? null : await getAiSettings(context.dataSource, context.config)
+      if (!useMock && !aiSettings!.apiKey) {
+        throw new ApiError(503, 'AI_NOT_CONFIGURED', '未配置 AI API Key，请在设置页填写')
+      }
+
+      // 3. 用户消息先落库（图片文件落盘在 M11 media-store 引入）
       const contentType = body.imageDataUrl ? 'mixed' : 'text'
-      await getRepository(ChatMessage).save(
+      const userMsg = await getRepository(ChatMessage).save(
         getRepository(ChatMessage).create({
           sessionId: session.id,
           role: 'user',
           contentType,
           content: message,
-          imageRelPath: null, // 图片文件落盘在 M9 media-store 引入
+          imageRelPath: null,
           meta: body.action ? { action: body.action } : null,
         }),
       )
@@ -92,29 +109,53 @@ export function createChatRouter(_context: AppContext): Router {
       let interrupted = false
       let errMsg: string | null = null
       try {
-        for await (const chunk of streamAiChunks({
-          message,
-          action: body.action,
-          selection: body.selection,
-          imageDataUrl: body.imageDataUrl,
-        })) {
-          if (res.writableEnded || res.destroyed) {
-            interrupted = true
-            break
+        if (useMock) {
+          for await (const chunk of streamAiChunks({
+            message,
+            action: body.action,
+            selection: body.selection,
+            imageDataUrl: body.imageDataUrl,
+          })) {
+            if (res.writableEnded || res.destroyed) {
+              interrupted = true
+              break
+            }
+            text += chunk
+            sse(res, 'delta', { text: chunk })
           }
-          text += chunk
-          sse(res, 'delta', { text: chunk })
+        } else {
+          const input: DeepSeekInput = {
+            sessionId: session.id,
+            excludeMessageId: userMsg.id,
+            message,
+            action: body.action,
+            imageDataUrl: body.imageDataUrl,
+          }
+          for await (const chunk of streamDeepSeek(input, aiSettings!, reqCtrl.signal)) {
+            if (res.writableEnded || res.destroyed) {
+              interrupted = true
+              break
+            }
+            text += chunk
+            sse(res, 'delta', { text: chunk })
+          }
         }
       } catch (err) {
-        errMsg = err instanceof Error ? err.message : String(err)
-        const body2: SseError = { message: errMsg }
-        sse(res, 'error', body2)
+        if (isAbortError(err)) {
+          interrupted = true
+        } else {
+          errMsg = err instanceof Error ? err.message : String(err)
+          sse(res, 'error', { message: errMsg })
+        }
       }
 
       // 流结束落库（一次 UPDATE）
       await getRepository(ChatMessage).update(assistantMsg.id, {
         content: errMsg ? `⚠️ 出错了：${errMsg}` : text,
-        meta: { interrupted: interrupted || (errMsg != null) || undefined },
+        meta: {
+          model: useMock ? undefined : aiSettings!.model,
+          interrupted: interrupted || (errMsg != null) || undefined,
+        },
       })
 
       if (!errMsg) sse(res, 'done', {})

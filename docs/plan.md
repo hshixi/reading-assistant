@@ -12,7 +12,7 @@
 | M6 | 连续滚动 | 虚拟化渲染、适配宽度 | 100 页 PDF 滚动流畅，缩放不糊 | ✅ 2026-09-01 |
 | M7 | 框选截图 | SelectionOverlay、坐标换算、PNG dataURL | Retina 2x 下截图与选区一致无偏移 | ✅ 2026-09-01 |
 | M8 | 聊天 UI | ChatPanel、MessageList、markdown、SSE 消费 | mock 后端流式打字机正常 | ✅ 2026-09-01 |
-| M9 | DeepSeek 接入 | deepseek.ts、stream 端点、翻译/解释 | 真实 API 图文流式回答；断网/401 有提示 | |
+| M9 | DeepSeek 接入 | deepseek.ts、stream 端点、翻译/解释 | 真实 API 图文流式回答；断网/401 有提示 | ✅ 2026-09-01 |
 | M10 | 会话与历史 | sessions CRUD、消息持久化、重开书恢复聊天 | 重开书见上次会话与完整消息；切会话正确 | |
 | M11 | 笔记/高亮 | 三表 CRUD、HighlightLayer、AI 摘抄/高亮落库 | 框选→高亮上页；AI 摘抄后笔记面板出现记录 | |
 | M12 | 设置页 | AI/DB 设置表单、持久化、立即生效 | 改 base_url/key 后新对话即用新配置 | |
