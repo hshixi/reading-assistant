@@ -7,7 +7,7 @@
 | M1 | 仓库骨架 | git init、npm workspaces、tsconfig/eslint、shared 类型、docs/adr | 三包可构建，lint/typecheck 通过，后端 /health 通 | ✅ 2026-09-01 |
 | M2 | Electron 壳连通 | main/preload、dev.mjs、窗口加载 vite dev | dev 启动见默认 Vue 页，主进程无错 | ✅ 2026-09-01 |
 | M3 | DB 层 | 7 实体、data-source 双驱动、bootstrap、settings 种子 | MySQL 与 SQLite 两种 env 均能 initialize+建表+种子 | ✅ 2026-09-01 |
-| M4 | 书籍模块 | book-store、上传接口、Range 流、列表/删除 | 上传/删除 PDF 成功，文件目录正确清理 | |
+| M4 | 书籍模块 | book-store、上传接口、Range 流、列表/删除 | 上传/删除 PDF 成功，文件目录正确清理 | ✅ 2026-09-01 |
 | M5 | PDF 阅读器 | pdf.js 单页渲染+页码+缩放、worker 配置 | dev 与 prod 均渲染无 worker 报错 | |
 | M6 | 连续滚动 | 虚拟化渲染、适配宽度 | 100 页 PDF 滚动流畅，缩放不糊 | |
 | M7 | 框选截图 | SelectionOverlay、坐标换算、PNG dataURL | Retina 2x 下截图与选区一致无偏移 | |
