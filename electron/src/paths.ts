@@ -1,4 +1,5 @@
 /** 路径解析：应用数据目录、前端构建产物等。 */
+import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 
@@ -9,7 +10,10 @@ export function userDataDir(): string {
 
 /** 前端构建产物目录（prod 模式 BrowserWindow 加载此处的 index.html） */
 export function frontendDistDir(): string {
-  // electron/dist/main.js → 仓库根 → frontend/dist
+  // 打包后：release 脚本把 frontend/dist 拷入 electron/dist-frontend（与 asar 同构）
+  const packaged = path.join(__dirname, '..', 'dist-frontend')
+  if (fs.existsSync(path.join(packaged, 'index.html'))) return packaged
+  // 源码级 prod 验证：electron/dist/main.js → 仓库根 → frontend/dist
   return path.join(__dirname, '..', '..', 'frontend', 'dist')
 }
 

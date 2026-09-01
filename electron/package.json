@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Electron 主进程 + preload",
+  "author": "Reading Assistant",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -11,7 +12,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "electron": "^44.1.0",
+    "electron": "44.1.0",
     "typescript": "^5.6.0"
   }
 }

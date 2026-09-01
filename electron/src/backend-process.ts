@@ -7,8 +7,8 @@
  * 本机 clang14 无法编译。统一走 node 二进制即无 ABI 摩擦。
  *
  * node 解析顺序：
- *  1. READING_APP_NODE_BIN 环境变量（M14 打包时在 extraResources 附带同版本
- *     node 二进制并指定路径；GUI 启动的 PATH 不含 node，必须显式指定）
+ *  0. 随 app 捆绑的 node（打包后位于 Resources/backend/node，extraResources）
+ *  1. READING_APP_NODE_BIN 环境变量（显式覆盖）
  *  2. PATH 上的系统 node
  *  3. 兜底：process.execPath + ELECTRON_RUN_AS_NODE（需要 Electron ABI 原生模块，
  *     仅在无 node 且原生模块已按 Electron ABI 构建时可用）
@@ -37,7 +37,10 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 /** 打包后的后端单文件；开发模式下不存在 */
 function backendBundlePath(): string | null {
-  // electron/dist/backend-process.js → electron/dist-backend/server.js
+  // 打包后：Resources/backend/server.js（extraResources，放在 asar 之外）
+  const packaged = path.join(process.resourcesPath, 'backend', 'server.js')
+  if (fs.existsSync(packaged)) return packaged
+  // 源码级 prod 验证：electron/dist-backend/server.js
   const p = path.join(__dirname, '..', 'dist-backend', 'server.js')
   return fs.existsSync(p) ? p : null
 }
@@ -95,6 +98,14 @@ function resolveNodeLauncher(bundle: string): {
     READING_APP_DATA_DIR: userDataDir(),
     PORT: '0',
     HOST: '127.0.0.1',
+    // 有 MySQL 用 MySQL，没有则自动降级 SQLite（init.ts 的 auto 逻辑，秒级快速失败）
+    DATABASE_DRIVER: 'auto',
+  }
+
+  // 0) 随 app 捆绑的 node（打包后 Resources/backend/node）
+  const bundledNode = path.join(process.resourcesPath, 'backend', 'node')
+  if (fs.existsSync(bundledNode)) {
+    return { cmd: bundledNode, args: [bundle], env: baseEnv }
   }
 
   // 1) 显式指定（M14 打包附带 node）

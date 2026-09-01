@@ -4,8 +4,12 @@ node_modules/
 # Build outputs
 dist/
 dist-backend/
+dist-frontend/
 build/
 *.tsbuildinfo
+
+# M14 release resources（含随包 node 二进制与原生模块，由 release.mjs 生成）
+resources/
 
 # Frontend
 .vite/

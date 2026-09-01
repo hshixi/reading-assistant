@@ -17,7 +17,7 @@
 | M11 | 笔记/高亮 | 三表 CRUD、HighlightLayer、AI 摘抄/高亮落库 | 框选→高亮上页；AI 摘抄后笔记面板出现记录 | ✅ 2026-09-01 |
 | M12 | 设置页 | AI/DB 设置表单、持久化、立即生效 | 改 base_url/key 后新对话即用新配置 | ✅ 2026-09-01 |
 | M13 | 生产打包 | 后端子进程、动态端口、静态资源、CORS/安全 | 源码级 prod 验证：electron 拉起后端子进程、动态端口握手、file:// 渲染、无后端报错、退出无孤儿进程 | ✅ 2026-09-01 |
-| M14 | dmg+降级验证 | electron-builder dmg、MySQL→SQLite 自动退回 | 无 MySQL 机器开箱即用；有 MySQL 用 MySQL | |
+| M14 | dmg+降级验证 | electron-builder dmg、MySQL→SQLite 自动退回 | dmg 构建 + 打包后应用开箱即用；无 MySQL 自动降级 SQLite；退出无孤儿进程 | ✅ 2026-09-01 |
 | M15 | QA/收尾 | 空态/错误处理/README/lint/CI/图标 | 冒烟测试清单全绿 | |
 
 ## 分支纪律
@@ -38,3 +38,26 @@ node 二进制并指定）→ PATH 上的系统 node → 兜底 process.execPath
 GUI（Finder）启动的 PATH 不含 node，**M14 必须捆绑 node 二进制**，否则打包后无法拉起后端。
 
 另：eslint `ignores` 增加 `**/dist-backend/**`（esbuild 单文件产物不参与 lint）。
+
+## M14 打包要点（scripts/release.mjs + electron-builder）
+
+- **node 随包附带**：better-sqlite3 按系统 Node ABI（node v24.16.0，ABI 137）构建，
+  后端必须以同版本真实 node 运行。release 脚本从 nodejs.org 下载 darwin-<arch> 的
+  node 二进制放入 `Resources/backend/node`（可用 `--node-binary` 覆盖），
+  主进程 `resolveNodeLauncher` 优先用 `process.resourcesPath/backend/node`。
+- **extraResources 会过滤 node_modules**（app-builder-lib util/filter.js 对
+  `node_modules` 目录直接 return false）→ 改为「dir 出 .app → 手动注入
+  resources/<arch>/backend 到 .app/Contents/Resources/backend → --prepackaged 出 dmg」。
+- **asar 只含 electron/dist + electron/dist-frontend**（release 脚本把 frontend/dist
+  拷入 electron/dist-frontend；`files` 显式排除 `**/node_modules/**`，避免 monorepo
+  依赖污染）。frontendDistDir() 优先解析 asar 内的 dist-frontend。
+- **后端运行时依赖**：server.js 由 esbuild 内联 express/typeorm/mysql2 等纯 JS；
+  external better-sqlite3（原生）+ pdfjs-dist（ESM 动态 import）。随包只带
+  better-sqlite3（lib+build/Release）、bindings、file-uri-to-path、
+  pdfjs-dist（裁剪为 package.json + legacy/build/pdf.mjs，自包含）。
+- **MySQL 自动探测**：主进程以 `DATABASE_DRIVER=auto` 拉起后端 → 有 MySQL 用 MySQL、
+  无则 connect ECONNREFUSED 秒级降级 SQLite（init.ts）。
+- **前端竞态修复**：App.vue 用 initApi()+checkHealth() 就绪门控（ready 前不渲染
+  router-view，失败显示重试）。此前 ShelfView 的 fetchBooks 在 initApi 解析端口前
+  运行，prod 冷启动下落到 8787 导致 "Failed to fetch"。
+- 打包后无签名（本地内测右键打开），图标 M15。

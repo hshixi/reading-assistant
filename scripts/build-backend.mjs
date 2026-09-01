@@ -1,13 +1,15 @@
 /**
- * M13：把后端打成单文件 server.js（Electron prod 模式下由主进程以
- * ELECTRON_RUN_AS_NODE 拉起，监听动态端口）。
+ * M13/M14：把后端打成单文件 server.js（Electron prod 模式下由主进程以真实 node 拉起）。
  *
  * 打包策略：
- *  - bundle:true 内联 TypeORM/express/reflect-metadata 等纯 JS 依赖。
- *  - external better-sqlite3（原生模块）、mysql2（动态 require）、pdfjs-dist（体积大、动态 import ESM）：
- *    运行时从应用目录的 node_modules 解析；M14 electron-builder 用 extraResources 带入 + asarUnpack。
+ *  - bundle:true 内联 TypeORM/express/mysql2/reflect-metadata 等纯 JS 依赖
+ *    （mysql2 纯 JS，bundled 后 MySQL 模式无需随包携带 node_modules）。
+ *  - external better-sqlite3（原生模块）、pdfjs-dist（页数解析用 ESM 动态 import，
+ *    运行时从应用目录 node_modules 解析）：
+ *    M14 由 release 脚本把这两个依赖树拷进 extraResources/backend/node_modules。
  *
- * 输出：electron/dist-backend/server.js（开发/验证路径；M14 迁到 extraResources/backend）。
+ * 输出：electron/dist-backend/server.js（源码级 prod 验证路径）；
+ *       M14 release 脚本会将其拷贝到 extraResources/backend/server.js。
  */
 import { build } from 'esbuild'
 import path from 'node:path'
@@ -24,7 +26,7 @@ await build({
   target: 'node20',
   sourcemap: false,
   minify: false,
-  external: ['better-sqlite3', 'mysql2', 'pdfjs-dist'],
+  external: ['better-sqlite3', 'pdfjs-dist'],
   banner: { js: '/* reading-assistant backend bundle (esbuild) */' },
   logLevel: 'info',
 })
