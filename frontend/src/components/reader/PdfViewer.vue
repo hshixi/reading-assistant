@@ -2,6 +2,7 @@
   <div
     ref="containerRef"
     class="pdf-viewer"
+    @scroll.passive="onScroll"
   >
     <div
       v-if="!pdfDoc"
@@ -29,12 +30,21 @@
 
     <div
       v-else
-      class="page-wrap"
+      class="pages-column"
+      :style="{ height: `${totalHeight}px` }"
     >
-      <canvas
-        ref="canvasRef"
-        class="pdf-canvas"
-      />
+      <!-- 虚拟化：只挂载视口 ±2 页的 canvas，其余以绝对定位占位 -->
+      <div
+        v-for="p in visiblePages"
+        :key="p.num"
+        class="page-item"
+        :style="{ top: `${p.top}px` }"
+      >
+        <canvas
+          :ref="setCanvas(p.num)"
+          class="pdf-canvas"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -50,7 +60,6 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
  * 触发其顶部的 `globalThis.pdfjsWorker = { WorkerMessageHandler }`。
  * pdf.js 的 PDFWorker 检测到该全局对象后就不再创建真实 Worker，
  * 从而绕开 file:// 下 Chromium 禁止加载模块 Worker 的问题（已实测 onerror: undefined）。
- * 不能依赖 GlobalWorkerOptions.workerSrc——那会诱导 pdf.js 去 new Worker(file://)。
  */
 let fakeWorkerReady: Promise<void> | null = null
 async function ensureFakeWorker(): Promise<void> {
@@ -72,69 +81,236 @@ const props = defineProps<{ src: string }>()
 const emit = defineEmits<{ 'page-count': [count: number]; 'page-number': [n: number] }>()
 
 const containerRef = ref<HTMLDivElement>()
-const canvasRef = ref<HTMLCanvasElement>()
-// 必须用 shallowRef：pdf.js 文档对象含 class 私有字段（#pagesNumber 等），
-// 若被 Vue 深度 reactive 代理，私有字段/WeakMap 身份校验会失败（报 Cannot read from private field）
+// 必须用 shallowRef：pdf.js 文档对象含 class 私有字段，Vue 深度 reactive 代理会破坏其身份
 const pdfDoc = shallowRef<pdfjsLib.PDFDocumentProxy | null>(null)
 const loading = ref(false)
 const error = ref('')
 
-/** 当前页码与缩放（对外暴露，供工具栏双向操作） */
 const pageNumber = ref(1)
 const pageCount = ref(0)
 const scale = ref(1)
 
-let renderTask: pdfjsLib.RenderTask | null = null
+/** 连续滚动布局常量 */
+const GAP = 16
+const PAD_TOP = 16
+const PAD_BOTTOM = 24
 
-/** 渲染当前页到 canvas，含 devicePixelRatio 缩放保证 Retina 清晰（由 pdf.js transform 参数处理） */
-async function renderPage(): Promise<void> {
-  if (!pdfDoc.value || !canvasRef.value) return
-  const page = await pdfDoc.value.getPage(pageNumber.value)
-  const viewport = page.getViewport({ scale: scale.value })
-  const dpr = window.devicePixelRatio || 1
+interface PageSize {
+  w: number
+  h: number
+}
+/** 每页基准尺寸（scale=1），index = 页码-1；一次取全量，offets 即可纯同步推算 */
+const sizes: PageSize[] = []
+/** 每页在当前 scale 下的顶部偏移（px） */
+const offsets: number[] = []
+const totalHeight = ref(0)
 
-  const canvas = canvasRef.value
-  canvas.width = Math.floor(viewport.width * dpr)
-  canvas.height = Math.floor(viewport.height * dpr)
-  canvas.style.width = `${Math.floor(viewport.width)}px`
-  canvas.style.height = `${Math.floor(viewport.height)}px`
+/** 视口内 ±2 页的可见页（页码 1 起），驱动 v-for 挂载 canvas */
+const visiblePages = ref<{ num: number; top: number }[]>([])
 
-  renderTask?.cancel()
-  renderTask = page.render({
-    canvas,
-    viewport,
-    transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
-  })
-  await renderTask.promise
-  renderTask = null
+const canvasEls = new Map<number, HTMLCanvasElement>()
+const renderTasks = new Map<number, pdfjsLib.RenderTask>()
+
+/** 布局/渲染版本号：任何一次重排递增，旧的非显式渲染即作废 */
+let layoutNonce = 0
+let scrollRaf = 0
+
+/* ---------- 工具函数 ---------- */
+
+/** 返回包含 y 坐标的页索引（二分，最大满足 offsets[i] <= y） */
+function pageIndexAt(y: number): number {
+  let lo = 0
+  let hi = offsets.length - 1
+  let ans = -1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    if (offsets[mid] <= y) {
+      ans = mid
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  return ans
 }
 
-async function loadDoc(): Promise<void> {
-  loading.value = true
-  error.value = ''
-  try {
-    await ensureFakeWorker()
-    pdfDoc.value = await pdfjsLib.getDocument({ url: props.src }).promise
-    pageCount.value = pdfDoc.value.numPages
-    pageNumber.value = Math.min(pageNumber.value, pageCount.value)
-    emit('page-count', pageCount.value)
-    // 等待 v-else 分支的 canvas 挂载完成后再渲染
-    await nextTick()
-    await renderPage()
-  } catch (err) {
-    console.error('[pdf] 加载失败:', err)
-    error.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    loading.value = false
+/** 依当前 scale 与 sizes 重算偏移与总高 */
+function computeOffsets(): void {
+  offsets.length = 0
+  let y = PAD_TOP
+  for (const s of sizes) {
+    offsets.push(y)
+    y += s.h * scale.value + GAP
   }
+  totalHeight.value = Math.max(0, y - GAP + PAD_BOTTOM)
+}
+
+/** 依滚动位置计算可见范围（±2 页）并重建 visiblePages */
+function updateVisible(): void {
+  const el = containerRef.value
+  if (!el || !pdfDoc.value || offsets.length === 0) {
+    visiblePages.value = []
+    return
+  }
+  const st = el.scrollTop
+  const vh = el.clientHeight
+  const first = pageIndexAt(st)
+  const last = pageIndexAt(st + vh)
+  const start = Math.max(0, (first < 0 ? 0 : first) - 2)
+  const end = Math.min(pageCount.value - 1, Math.max(first, last) + 2)
+  const pages: { num: number; top: number }[] = []
+  for (let i = start; i <= end; i++) {
+    pages.push({ num: i + 1, top: offsets[i] })
+  }
+  visiblePages.value = pages
+  cancelTasksOutOfRange()
+}
+
+function cancelTasksOutOfRange(): void {
+  const inRange = new Set(visiblePages.value.map((p) => p.num))
+  for (const [num, task] of renderTasks) {
+    if (!inRange.has(num)) {
+      task.cancel()
+      renderTasks.delete(num)
+    }
+  }
+}
+
+function cancelAllTasks(): void {
+  for (const task of renderTasks.values()) task.cancel()
+  renderTasks.clear()
+}
+
+/** 渲染单页到 canvas（Retina 由 transform 处理），非显渲染由 nonce 作废 */
+async function renderPageCanvas(num: number, canvas: HTMLCanvasElement, nonce: number): Promise<void> {
+  const doc = pdfDoc.value
+  if (!doc) return
+  try {
+    const page = await doc.getPage(num)
+    if (nonce !== layoutNonce) return
+    const vp = page.getViewport({ scale: scale.value })
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = Math.floor(vp.width * dpr)
+    canvas.height = Math.floor(vp.height * dpr)
+    canvas.style.width = `${Math.floor(vp.width)}px`
+    canvas.style.height = `${Math.floor(vp.height)}px`
+    if (nonce !== layoutNonce) return
+    const task = page.render({
+      canvas,
+      viewport: vp,
+      transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
+    })
+    renderTasks.set(num, task)
+    try {
+      await task.promise
+    } catch {
+      /* cancelled */
+    } finally {
+      renderTasks.delete(num)
+    }
+  } catch (err) {
+    if (nonce === layoutNonce) console.error(`[pdf] 第 ${num} 页渲染失败:`, err)
+  }
+}
+
+/** Vue patch 后补齐可见页的 canvas 渲染（未渲染的才渲染） */
+async function syncVisibleCanvases(): Promise<void> {
+  const nonce = layoutNonce
+  await nextTick()
+  if (nonce !== layoutNonce) return
+  for (const p of visiblePages.value) {
+    const canvas = canvasEls.get(p.num)
+    if (canvas && !renderTasks.has(p.num)) {
+      void renderPageCanvas(p.num, canvas, nonce)
+    }
+  }
+}
+
+/** 依视口中心更新「当前页」并 emit（工具栏/书签联动） */
+function updateCurrentPage(): void {
+  const el = containerRef.value
+  if (!el || offsets.length === 0) return
+  const idx = pageIndexAt(el.scrollTop + el.clientHeight / 2)
+  const n = idx + 1
+  if (idx >= 0 && n !== pageNumber.value) {
+    pageNumber.value = n
+    emit('page-number', n)
+  }
+}
+
+function onScroll(): void {
+  if (scrollRaf) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0
+    updateVisible()
+    void syncVisibleCanvases()
+    updateCurrentPage()
+  })
+}
+
+/* ---------- 布局与缩放 ---------- */
+
+/** 一次取全量页面基准尺寸（顺带预热 page cache），此后布局同步推算 */
+async function fetchAllSizes(): Promise<void> {
+  const doc = pdfDoc.value
+  if (!doc) return
+  sizes.length = 0
+  await Promise.all(
+    Array.from({ length: pageCount.value }, (_, i) =>
+      doc.getPage(i + 1).then((page) => {
+        const vp = page.getViewport({ scale: 1 })
+        sizes[i] = { w: vp.width, h: vp.height }
+      }),
+    ),
+  )
+}
+
+/** 应用缩放：以「视口顶端所在的页」为锚，缩放后回到该页顶部，避免视图跳变 */
+async function applyScale(newScale: number): Promise<void> {
+  const el = containerRef.value
+  const anchorIdx = el ? pageIndexAt(el.scrollTop) : -1
+  scale.value = newScale
+  layoutNonce++
+  computeOffsets()
+  cancelAllTasks()
+  updateVisible()
+  await syncVisibleCanvases()
+  if (el && anchorIdx >= 0) {
+    el.scrollTop = Math.max(0, offsets[anchorIdx] ?? 0)
+    updateVisible()
+    updateCurrentPage()
+  }
+}
+
+async function fitWidth(): Promise<void> {
+  const el = containerRef.value
+  if (!el || sizes.length === 0) return
+  const cw = el.clientWidth
+  const base = sizes[0].w
+  if (cw <= 0 || base <= 0) return
+  await applyScale(Math.max(0.2, Math.min(cw / base, 5)))
+}
+
+async function zoom(delta: number): Promise<void> {
+  const s = Math.max(0.2, Math.min(scale.value + delta, 5))
+  if (s !== scale.value) await applyScale(s)
 }
 
 async function goToPage(n: number): Promise<void> {
   const target = Math.max(1, Math.min(n, pageCount.value || 1))
-  if (target === pageNumber.value) return
+  const el = containerRef.value
+  if (!el) {
+    pageNumber.value = target
+    emit('page-number', target)
+    return
+  }
+  if (offsets.length > 0) {
+    el.scrollTop = Math.max(0, offsets[target - 1] - 8)
+  }
   pageNumber.value = target
   emit('page-number', target)
-  await renderPage()
+  updateVisible()
+  await syncVisibleCanvases()
 }
 
 async function nextPage(): Promise<void> {
@@ -145,29 +321,55 @@ async function prevPage(): Promise<void> {
   await goToPage(pageNumber.value - 1)
 }
 
-/** 适配宽度：按容器宽度计算缩放 */
-async function fitWidth(): Promise<void> {
-  if (!pdfDoc.value || !containerRef.value) return
-  const page = await pdfDoc.value.getPage(pageNumber.value)
-  const viewport = page.getViewport({ scale: 1 })
-  const containerWidth = containerRef.value.clientWidth
-  if (containerWidth <= 0 || viewport.width <= 0) return
-  scale.value = Math.max(0.2, Math.min(containerWidth / viewport.width, 5))
-  await renderPage()
+/* ---------- 生命周期 ---------- */
+
+async function loadDoc(): Promise<void> {
+  loading.value = true
+  error.value = ''
+  layoutNonce++
+  pageNumber.value = 1
+  pageCount.value = 0
+  sizes.length = 0
+  offsets.length = 0
+  cancelAllTasks()
+  visiblePages.value = []
+  try {
+    await ensureFakeWorker()
+    const doc = await pdfjsLib.getDocument({ url: props.src }).promise
+    pdfDoc.value = doc
+    pageCount.value = doc.numPages
+    emit('page-count', pageCount.value)
+    await fetchAllSizes()
+    computeOffsets()
+    await fitWidth()
+    updateVisible()
+    await syncVisibleCanvases()
+    updateCurrentPage()
+  } catch (err) {
+    console.error('[pdf] 加载失败:', err)
+    error.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    loading.value = false
+  }
 }
 
-async function zoom(delta: number): Promise<void> {
-  scale.value = Math.max(0.2, Math.min(scale.value + delta, 5))
-  await renderPage()
+function destroy(): void {
+  layoutNonce++
+  cancelAllTasks()
+  void pdfDoc.value?.destroy()
+  pdfDoc.value = null
+}
+
+function setCanvas(num: number): (el: unknown) => void {
+  return (el: unknown) => {
+    if (el instanceof HTMLCanvasElement) canvasEls.set(num, el)
+    else canvasEls.delete(num)
+  }
 }
 
 watch(() => props.src, loadDoc)
 onMounted(loadDoc)
-
-onBeforeUnmount(() => {
-  renderTask?.cancel()
-  void pdfDoc.value?.destroy()
-})
+onBeforeUnmount(destroy)
 
 defineExpose({ pageNumber, pageCount, scale, goToPage, nextPage, prevPage, fitWidth, zoom })
 </script>
@@ -194,10 +396,17 @@ defineExpose({ pageNumber, pageCount, scale, goToPage, nextPage, prevPage, fitWi
   color: var(--el-text-color-secondary);
 }
 
-.page-wrap {
+.pages-column {
+  position: relative;
+  width: 100%;
+}
+
+.page-item {
+  position: absolute;
+  left: 0;
+  right: 0;
   display: flex;
   justify-content: center;
-  padding: 16px 24px 32px;
 }
 
 .pdf-canvas {
