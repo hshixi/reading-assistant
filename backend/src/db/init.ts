@@ -1,4 +1,4 @@
-import type { DataSource } from 'typeorm'
+import type { DataSource, EntityTarget, ObjectLiteral, Repository } from 'typeorm'
 import type { AppConfig } from '../config'
 import { bootstrapDb, ensureDataDirs } from './bootstrap'
 import { mysqlDataSource, sqliteDataSource, type DbDriver } from './data-source'
@@ -21,6 +21,13 @@ export function getDataSource(): DataSource {
 
 export function getDbDriver(): DbDriver {
   return _driver
+}
+
+/** 便捷取仓库：路由层用 getRepository(Book) 替代手写 getDataSource().getRepository */
+export function getRepository<Entity extends ObjectLiteral>(
+  target: EntityTarget<Entity>,
+): Repository<Entity> {
+  return getDataSource().getRepository(target)
 }
 
 export function isFallback(): boolean {

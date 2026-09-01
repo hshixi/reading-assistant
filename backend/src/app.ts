@@ -7,6 +7,7 @@ import cors from 'cors'
 import type { DataSource } from 'typeorm'
 import { API_PREFIX, ApiPaths } from '@reading/shared'
 import { errorHandler, notFound } from './middleware/error'
+import { createBooksRouter } from './routes/books'
 import type { AppConfig } from './config'
 
 export interface AppContext {
@@ -33,7 +34,8 @@ export function createApp(context: AppContext): express.Express {
     res.json({ ok: true, name: 'reading-assistant-backend', time: Date.now() })
   })
 
-  // 后续里程碑在此挂载资源路由：api.use(booksRouter) 等
+  // M4: 书籍模块
+  api.use(createBooksRouter(context))
 
   app.use(API_PREFIX, api)
 
