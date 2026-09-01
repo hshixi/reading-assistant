@@ -115,6 +115,30 @@ export interface AiSettings {
   aiTemperature: number
 }
 
+/**
+ * 设置页 DTO（GET/PUT /api/settings）。
+ * 安全约束：API key 绝不下发渲染层 —— 只返回「是否已配置」，不返回明文。
+ */
+export interface SettingsDto {
+  aiBaseUrl: string
+  aiModel: string
+  aiMaxTokens: number
+  aiTemperature: number
+  aiApiKeySet: boolean
+  /** 实际运行中的数据库模式：sqlite | mysql */
+  dbMode: string
+  schemaVersion: string
+}
+
+/** 设置修改入参（PUT，部分更新）：key 非空才写入，空/缺省 = 保持不变 */
+export interface SettingsPatch {
+  aiBaseUrl?: string
+  aiModel?: string
+  aiMaxTokens?: number
+  aiTemperature?: number
+  aiApiKey?: string
+}
+
 /** 聊天请求体（SSE /api/chat/stream） */
 export interface ChatRequest {
   /** 已有会话则传 sessionId；新会话省略由后端创建 */

@@ -24,6 +24,8 @@ export type {
   Note,
   Rect,
   Selection,
+  SettingsDto,
+  SettingsPatch,
   SseDelta,
   SseError,
   SseMeta,

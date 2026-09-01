@@ -11,6 +11,7 @@ import { createBooksRouter } from './routes/books'
 import { createSessionsRouter } from './routes/sessions'
 import { createChatRouter } from './routes/chat'
 import { createAnnotationsRouter, createHighlightsRouter, createNotesRouter } from './routes/marks'
+import { createSettingsRouter } from './routes/settings'
 import type { AppConfig } from './config'
 
 export interface AppContext {
@@ -54,6 +55,9 @@ export function createApp(context: AppContext): express.Express {
   api.use(createNotesRouter())
   api.use(createHighlightsRouter())
   api.use(createAnnotationsRouter())
+
+  // M12: 设置（AI 配置读写，DB 实时生效）
+  api.use(createSettingsRouter(context))
 
   app.use(API_PREFIX, api)
 

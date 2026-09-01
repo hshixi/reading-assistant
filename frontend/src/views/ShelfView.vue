@@ -10,6 +10,13 @@
         >
           {{ uploading ? '上传中…' : '导入 PDF' }}
         </el-button>
+        <el-button
+          data-test="settings-btn"
+          @click="$router.push('/settings')"
+        >
+          <el-icon><Setting /></el-icon>
+          <span>设置</span>
+        </el-button>
       </div>
       <input
         ref="fileInput"
@@ -98,7 +105,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Cpu } from '@element-plus/icons-vue'
+import { Document, Files, Cpu, Setting } from '@element-plus/icons-vue'
 import type { Book } from '@reading/shared'
 import { useBookStore } from '@/stores/book'
 
