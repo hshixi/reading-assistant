@@ -42,6 +42,7 @@
       >
         <canvas
           :ref="setCanvas(p.num)"
+          :data-page="p.num"
           class="pdf-canvas"
         />
       </div>

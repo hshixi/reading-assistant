@@ -72,6 +72,14 @@
           </el-button>
         </el-button-group>
       </div>
+
+      <el-button
+        size="small"
+        :type="selActive ? 'primary' : 'default'"
+        @click="selActive = !selActive"
+      >
+        {{ selActive ? '取消框选' : '框选' }}
+      </el-button>
     </div>
 
     <main
@@ -89,6 +97,12 @@
         v-else
         description="无法加载书籍"
       />
+      <SelectionOverlay
+        v-if="src && !loadError"
+        :active="selActive"
+        @selection="onSelection"
+        @cancel="selActive = false"
+      />
     </main>
   </div>
 </template>
@@ -97,7 +111,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import PdfViewer from '@/components/reader/PdfViewer.vue'
+import SelectionOverlay, {
+  type SelectionResult,
+} from '@/components/reader/SelectionOverlay.vue'
 import { getBook } from '@/api/books'
 import { bookFileUrl } from '@/api/client'
 import { useReaderStore } from '@/stores/reader'
@@ -113,6 +131,16 @@ const pageCount = ref(0)
 const src = ref('')
 const loading = ref(false)
 const loadError = ref('')
+const selActive = ref(false)
+
+/** 框选完成：存入 store 供聊天发送时读取，并退出截图模式 */
+function onSelection(sel: SelectionResult): void {
+  readerStore.setSelection(sel)
+  selActive.value = false
+  ElMessage.success(`已框选第 ${sel.page} 页区域，可发送给 AI`)
+  // 测试/调试钩子：harness 通过 window.__readerSelection 读取断言
+  ;(window as unknown as Record<string, unknown>).__readerSelection = sel
+}
 
 function onPageCount(count: number): void {
   pageCount.value = count
@@ -200,5 +228,6 @@ onMounted(loadBook)
 .reader-main {
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 </style>
