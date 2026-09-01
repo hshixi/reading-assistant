@@ -14,6 +14,23 @@ const isDev = !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 
+/** 带重试的加载：dev 下 vite 可能尚未就绪，prod 下文件可能正在释放 */
+async function loadRenderer(win: BrowserWindow): Promise<void> {
+  const target = isDev
+    ? DEV_SERVER_URL
+    : `file://${path.join(frontendDistDir(), 'index.html')}`
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    try {
+      await win.loadURL(target)
+      return
+    } catch (err) {
+      console.warn(`[electron] 加载失败（第 ${attempt} 次）: ${String(err)}`)
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+  }
+  throw new Error(`无法加载 ${target}`)
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -43,11 +60,11 @@ function createWindow(): void {
   })
 
   if (isDev) {
-    void mainWindow.loadURL(DEV_SERVER_URL)
     mainWindow.webContents.openDevTools({ mode: 'detach' })
-  } else {
-    void mainWindow.loadFile(path.join(frontendDistDir(), 'index.html'))
   }
+  void loadRenderer(mainWindow).catch((err) => {
+    console.error('[electron] 渲染进程加载失败:', err)
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null

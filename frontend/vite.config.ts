@@ -10,6 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // workspace 包直接走 TS 源码（ESM），规避 CJS 产物下 rollup 无法追踪命名导出的问题
+      '@reading/shared': fileURLToPath(new URL('../shared/src/index.ts', import.meta.url)),
     },
   },
   server: {
