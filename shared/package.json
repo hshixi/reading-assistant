@@ -1,0 +1,16 @@
+{
+  "name": "@reading/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "前后端共享 DTO 类型与常量",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
