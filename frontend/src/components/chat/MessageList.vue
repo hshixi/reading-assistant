@@ -1,6 +1,15 @@
 <template>
-  <div ref="scrollRef" class="message-list" @scroll="onScroll">
-    <div v-if="store.loadingHistory" class="list-hint">加载中…</div>
+  <div
+    ref="scrollRef"
+    class="message-list"
+    @scroll="onScroll"
+  >
+    <div
+      v-if="store.loadingHistory"
+      class="list-hint"
+    >
+      加载中…
+    </div>
     <el-button
       v-else-if="store.hasMore"
       link
@@ -11,11 +20,18 @@
       加载更早的消息
     </el-button>
 
-    <div v-if="store.messages.length === 0" class="empty-hint">
+    <div
+      v-if="store.messages.length === 0"
+      class="empty-hint"
+    >
       暂无消息。选中页面内容后点「翻译 / 解释 / 摘抄 / 高亮」，或直接输入提问。
     </div>
 
-    <MessageItem v-for="m in store.messages" :key="m.id" :msg="m" />
+    <MessageItem
+      v-for="m in store.messages"
+      :key="m.id"
+      :msg="m"
+    />
     <div ref="bottomRef" />
   </div>
 </template>

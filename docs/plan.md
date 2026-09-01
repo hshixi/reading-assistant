@@ -18,7 +18,7 @@
 | M12 | 设置页 | AI/DB 设置表单、持久化、立即生效 | 改 base_url/key 后新对话即用新配置 | ✅ 2026-09-01 |
 | M13 | 生产打包 | 后端子进程、动态端口、静态资源、CORS/安全 | 源码级 prod 验证：electron 拉起后端子进程、动态端口握手、file:// 渲染、无后端报错、退出无孤儿进程 | ✅ 2026-09-01 |
 | M14 | dmg+降级验证 | electron-builder dmg、MySQL→SQLite 自动退回 | dmg 构建 + 打包后应用开箱即用；无 MySQL 自动降级 SQLite；退出无孤儿进程 | ✅ 2026-09-01 |
-| M15 | QA/收尾 | 空态/错误处理/README/lint/CI/图标 | 冒烟测试清单全绿 | |
+| M15 | QA/收尾 | 空态/错误处理/README/lint/图标/冒烟清单 | 冒烟测试清单全绿 | ✅ 2026-09-01 | |
 
 ## 分支纪律
 
@@ -60,4 +60,24 @@ GUI（Finder）启动的 PATH 不含 node，**M14 必须捆绑 node 二进制**�
 - **前端竞态修复**：App.vue 用 initApi()+checkHealth() 就绪门控（ready 前不渲染
   router-view，失败显示重试）。此前 ShelfView 的 fetchBooks 在 initApi 解析端口前
   运行，prod 冷启动下落到 8787 导致 "Failed to fetch"。
-- 打包后无签名（本地内测右键打开），图标 M15。
+- 打包后无签名（本地内测右键打开）。
+
+## M15 收尾要点（QA）
+
+- **CSP**：构建期 vite 插件（`frontend/vite.config.ts` 的 `cspPlugin`）仅向产物注入 meta
+  `default-src 'self'; script-src 'self'; ...; connect-src 'self' http://127.0.0.1:* ws://... blob:`
+  （无 `unsafe-eval`；pdf.js 主线程 fake worker 无 worker-src；应用内框选截图是 data: URL）。
+  源码级 prod + 打包 dmg 双重验证：无 Security Warning、无 `Refused to`，PDF 文字像素渲染正常。
+- **图标**：`scripts/make-icon.py`（Pillow 绘制蓝靛渐变圆角方块 + 打开的书 + 橙色高亮笔道，
+  语义呼应「阅读 + AI 高亮」）→ `resources/icon.icns`（iconutil）。release.mjs 的
+  `.app` 与 dmg 卷都指定该图标。
+- **lint/typecheck 收尾**：eslint `ignores` 增补 `**/dist-frontend/**`、`**/resources/*/`；
+  MessageItem.vue 的 `v-html`（marked 输出经 DOMPurify.sanitize）用模板顶部
+  `eslint-disable vue/no-v-html` 注释豁免。`npm run lint` 0 error、`npm run typecheck` 全绿。
+- **空态/错误处理**：书架空态（el-empty）、阅读器加载/出错重试、聊天空态与 msg.error、
+  笔记空态、后端握手失败重试（App.vue）均已具备，M15 复核无缺口。
+- **冒烟清单**：见 `docs/smoke-test.md`。本机已验证：dmg 构建、无 MySQL 降级 SQLite、
+  空态、上传→书架、重开恢复数据、PDF 渲染、CSP 0 违规、退出 0 孤儿进程。
+- **README**：补充打包发布、架构决策要点（真实 node 后端子进程、DB 自动降级、前端竞态防护）
+  与安全设计（API key 只存后端不进日志、仅绑 127.0.0.1、CSP、contextIsolation）。
+- 遗留：x64 包 / 签名公证 / CI 自动化，发布前按需补。

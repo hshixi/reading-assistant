@@ -1,7 +1,10 @@
 <template>
   <div class="chat-panel">
     <div class="chat-header">
-      <el-dropdown trigger="click" @command="onSessionCommand">
+      <el-dropdown
+        trigger="click"
+        @command="onSessionCommand"
+      >
         <div class="session-current">
           <span class="session-current-title">{{ currentTitle }}</span>
           <el-icon><ArrowDown /></el-icon>
@@ -10,7 +13,11 @@
           <SessionList />
         </template>
       </el-dropdown>
-      <el-button link size="small" @click="newSession">
+      <el-button
+        link
+        size="small"
+        @click="newSession"
+      >
         <el-icon><Plus /></el-icon>
         <span>新对话</span>
       </el-button>

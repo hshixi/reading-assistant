@@ -8,8 +8,12 @@
       @click="store.openSession(s.id)"
     >
       <div class="session-info">
-        <div class="session-title">{{ s.title || '新对话' }}</div>
-        <div class="session-meta">{{ s.messageCount ?? 0 }} 条消息</div>
+        <div class="session-title">
+          {{ s.title || '新对话' }}
+        </div>
+        <div class="session-meta">
+          {{ s.messageCount ?? 0 }} 条消息
+        </div>
       </div>
       <el-dropdown
         trigger="click"
@@ -19,8 +23,15 @@
         <span class="session-more"><el-icon><MoreFilled /></el-icon></span>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="rename">重命名</el-dropdown-item>
-            <el-dropdown-item command="delete" divided>删除会话</el-dropdown-item>
+            <el-dropdown-item command="rename">
+              重命名
+            </el-dropdown-item>
+            <el-dropdown-item
+              command="delete"
+              divided
+            >
+              删除会话
+            </el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>

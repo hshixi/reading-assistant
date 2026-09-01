@@ -8,8 +8,10 @@ export default [
       '**/node_modules/**',
       '**/dist/**',
       '**/dist-backend/**',
+      '**/dist-frontend/**',
       '**/build/**',
       '**/release/**',
+      '**/resources/*/', // 仅忽略 per-arch 打包资源（含 bundle 与 node 二进制）
       '**/*.d.ts',
     ],
   },

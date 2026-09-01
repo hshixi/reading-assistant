@@ -1,16 +1,47 @@
 <template>
-  <div class="message" :class="msg.role">
+  <!-- eslint-disable vue/no-v-html -- 仅一处在 v-html="rendered"，rendered 经 DOMPurify.sanitize（marked 输出） -->
+  <div
+    class="message"
+    :class="msg.role"
+  >
     <div class="bubble">
-      <div v-if="msg.imageDataUrl" class="msg-img-wrap">
-        <img :src="msg.imageDataUrl" class="msg-img" alt="截图" />
+      <div
+        v-if="msg.imageDataUrl"
+        class="msg-img-wrap"
+      >
+        <img
+          :src="msg.imageDataUrl"
+          class="msg-img"
+          alt="截图"
+        >
       </div>
-      <div v-if="msg.content" class="msg-text markdown-body" v-html="rendered" />
-      <div v-if="msg.streaming && !msg.content" class="thinking">思考中<span class="cursor">…</span></div>
-      <div v-else-if="msg.streaming && msg.content" class="streaming-cursor" />
-      <div v-if="msg.error" class="msg-error">
+      <div
+        v-if="msg.content"
+        class="msg-text markdown-body"
+        v-html="rendered"
+      />
+      <div
+        v-if="msg.streaming && !msg.content"
+        class="thinking"
+      >
+        思考中<span class="cursor">…</span>
+      </div>
+      <div
+        v-else-if="msg.streaming && msg.content"
+        class="streaming-cursor"
+      />
+      <div
+        v-if="msg.error"
+        class="msg-error"
+      >
         ⚠️ {{ msg.error }}
       </div>
-      <div v-if="msg.meta?.interrupted" class="msg-error">（已中断）</div>
+      <div
+        v-if="msg.meta?.interrupted"
+        class="msg-error"
+      >
+        （已中断）
+      </div>
     </div>
   </div>
 </template>

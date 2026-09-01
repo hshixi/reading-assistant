@@ -1,21 +1,59 @@
 <template>
   <div class="chat-input">
     <!-- 框选预览：有选区时可选择附带截图发送 -->
-    <div v-if="selection" class="selection-preview">
-      <img :src="selection.imageDataUrl" class="selection-thumb" alt="框选截图" />
+    <div
+      v-if="selection"
+      class="selection-preview"
+    >
+      <img
+        :src="selection.imageDataUrl"
+        class="selection-thumb"
+        alt="框选截图"
+      >
       <div class="selection-info">
         <span>第 {{ selection.page }} 页区域</span>
-        <el-checkbox v-model="attachImage" size="small">附带截图</el-checkbox>
+        <el-checkbox
+          v-model="attachImage"
+          size="small"
+        >
+          附带截图
+        </el-checkbox>
       </div>
-      <el-button link size="small" @click="clearSelection">清除</el-button>
+      <el-button
+        link
+        size="small"
+        @click="clearSelection"
+      >
+        清除
+      </el-button>
     </div>
 
     <!-- 快捷动作 -->
     <div class="quick-actions">
-      <el-button size="small" @click="sendAction('translate')">翻译</el-button>
-      <el-button size="small" @click="sendAction('explain')">解释</el-button>
-      <el-button size="small" @click="sendAction('note')">摘抄</el-button>
-      <el-button size="small" @click="sendAction('highlight')">高亮</el-button>
+      <el-button
+        size="small"
+        @click="sendAction('translate')"
+      >
+        翻译
+      </el-button>
+      <el-button
+        size="small"
+        @click="sendAction('explain')"
+      >
+        解释
+      </el-button>
+      <el-button
+        size="small"
+        @click="sendAction('note')"
+      >
+        摘抄
+      </el-button>
+      <el-button
+        size="small"
+        @click="sendAction('highlight')"
+      >
+        高亮
+      </el-button>
     </div>
 
     <div class="input-row">

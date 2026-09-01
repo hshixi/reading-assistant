@@ -1,12 +1,43 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
 // 开发模式：前端请求 /api 走 Vite proxy 转发到后端固定端口 8787，规避 CORS。
 const BACKEND_PORT = Number(process.env.BACKEND_PORT ?? 8787)
 
+// 生产 CSP（仅注入构建产物；dev 由 vite 注入内联脚本/HMR，保持无 CSP 避免破坏）。
+// - script-src 'self'：打包产物为同源 file:// 资源；pdf.js 走主线程 fake worker（动态 import 同源 .mjs）
+// - connect-src http://127.0.0.1:*：后端动态端口 API + PDF Range 拉取
+// - img-src data:：应用内框选截图；blob: 备选
+// - style-src 'unsafe-inline'：Element Plus / Vue 运行时内联样式
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: http://127.0.0.1:*",
+  "connect-src 'self' http://127.0.0.1:* ws://localhost:5173 ws://127.0.0.1:* blob:",
+  "font-src 'self' data:",
+  "media-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-src 'none'",
+].join('; ')
+
+function cspPlugin(): Plugin {
+  return {
+    name: 'inject-csp',
+    apply: 'build',
+    transformIndexHtml(html) {
+      return html.replace(
+        '<meta charset="UTF-8" />',
+        `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${CSP}" />`,
+      )
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), cspPlugin()],
   // 生产打包由 Electron 以 file:// 加载，必须用相对路径否则资源 404
   base: './',
   resolve: {

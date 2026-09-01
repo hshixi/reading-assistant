@@ -14,11 +14,22 @@
           class="backend-alert"
         />
         <template v-if="backendError">
-          <el-button type="primary" @click="connect">重试</el-button>
+          <el-button
+            type="primary"
+            @click="connect"
+          >
+            重试
+          </el-button>
         </template>
         <template v-else>
-          <el-skeleton :rows="1" animated class="backend-skeleton" />
-          <p class="backend-loading">正在启动本地服务…</p>
+          <el-skeleton
+            :rows="1"
+            animated
+            class="backend-skeleton"
+          />
+          <p class="backend-loading">
+            正在启动本地服务…
+          </p>
         </template>
       </div>
     </template>

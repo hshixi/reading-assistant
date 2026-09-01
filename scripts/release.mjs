@@ -144,6 +144,9 @@ function writeBuilderConfig(arch, extra) {
   return cfgPath
 }
 
+// M15 图标：resources/icon.icns（scripts/make-icon.py 生成）
+const ICON = path.join(rootDir, 'resources', 'icon.icns')
+
 function buildDmg(arch) {
   prepareBackendResources(arch)
 
@@ -153,7 +156,10 @@ function buildDmg(arch) {
     productName: PRODUCT_NAME,
     directories: { output: '../release' },
     files: ['dist/**', 'dist-frontend/**', '!**/node_modules/**', '!dist-backend/**'],
-    mac: { category: 'public.app-category.productivity' },
+    mac: {
+      category: 'public.app-category.productivity',
+      icon: ICON,
+    },
     npmRebuild: false, // 原生模块以系统 Node ABI 随 node 走，不按 Electron ABI 重编译
   })
   console.log(`\n[release] 构建 ${arch} .app ...`)
@@ -170,7 +176,8 @@ function buildDmg(arch) {
     appId: 'com.readingassistant.desktop',
     productName: PRODUCT_NAME,
     directories: { output: '../release' },
-    mac: { category: 'public.app-category.productivity' },
+    mac: { category: 'public.app-category.productivity', icon: ICON },
+    dmg: { icon: ICON },
   })
   console.log(`[release] 构建 ${arch} dmg ...`)
   run(`npx electron-builder --mac dmg --${arch} --prepackaged "${appDir}" --config "${dmgCfg}"`, electronDir)
