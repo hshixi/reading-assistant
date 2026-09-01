@@ -40,11 +40,18 @@
         class="page-item"
         :style="{ top: `${p.top}px` }"
       >
-        <canvas
-          :ref="setCanvas(p.num)"
-          :data-page="p.num"
-          class="pdf-canvas"
-        />
+        <!-- .page-wrap 与 canvas 同尺寸（相对定位），供高亮/注释等覆盖层按百分比对齐 -->
+        <div class="page-wrap">
+          <canvas
+            :ref="setCanvas(p.num)"
+            :data-page="p.num"
+            class="pdf-canvas"
+          />
+          <slot
+            name="page"
+            :num="p.num"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -410,7 +417,13 @@ defineExpose({ pageNumber, pageCount, scale, goToPage, nextPage, prevPage, fitWi
   justify-content: center;
 }
 
+/* 包裹 canvas，尺寸即内容尺寸；覆盖层（高亮）absolute 相对它定位 */
+.page-wrap {
+  position: relative;
+}
+
 .pdf-canvas {
+  display: block;
   background: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }

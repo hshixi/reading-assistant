@@ -83,9 +83,9 @@
 
       <el-button
         size="small"
-        @click="showChat = !showChat"
+        @click="showRight = !showRight"
       >
-        {{ showChat ? '收起聊天' : '聊天' }}
+        {{ showRight ? '收起侧栏' : '侧栏' }}
       </el-button>
     </div>
 
@@ -100,7 +100,12 @@
           :src="src"
           @page-count="onPageCount"
           @page-number="page = $event"
-        />
+        >
+          <!-- M11：每页包裹层内渲染高亮覆盖层（slot 按页码传入，百分比定位随缩放自适应） -->
+          <template #page="{ num }">
+            <HighlightLayer :page="num" />
+          </template>
+        </PdfViewer>
         <el-empty
           v-else
           description="无法加载书籍"
@@ -114,10 +119,32 @@
       </main>
 
       <aside
-        v-if="showChat"
+        v-if="showRight"
         class="reader-chat"
       >
-        <ChatPanel />
+        <div class="right-tabs">
+          <button
+            class="right-tab"
+            :class="{ active: rightTab === 'chat' }"
+            @click="rightTab = 'chat'"
+          >
+            聊天
+          </button>
+          <button
+            class="right-tab"
+            :class="{ active: rightTab === 'notes' }"
+            @click="rightTab = 'notes'"
+          >
+            笔记
+          </button>
+        </div>
+        <div class="right-body">
+          <ChatPanel v-show="rightTab === 'chat'" />
+          <NotesPanel
+            v-show="rightTab === 'notes'"
+            @jump="goTo"
+          />
+        </div>
       </aside>
     </div>
   </div>
@@ -132,15 +159,19 @@ import PdfViewer from '@/components/reader/PdfViewer.vue'
 import SelectionOverlay, {
   type SelectionResult,
 } from '@/components/reader/SelectionOverlay.vue'
+import HighlightLayer from '@/components/reader/HighlightLayer.vue'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
+import NotesPanel from '@/components/notes/NotesPanel.vue'
 import { getBook } from '@/api/books'
 import { bookFileUrl } from '@/api/client'
 import { useReaderStore } from '@/stores/reader'
 import { useChatStore } from '@/stores/chat'
+import { useNotesStore } from '@/stores/notes'
 
 const route = useRoute()
 const readerStore = useReaderStore()
 const chatStore = useChatStore()
+const notesStore = useNotesStore()
 
 const bookId = computed(() => Number(route.params.bookId))
 const viewerRef = ref<InstanceType<typeof PdfViewer> | null>(null)
@@ -151,7 +182,8 @@ const src = ref('')
 const loading = ref(false)
 const loadError = ref('')
 const selActive = ref(false)
-const showChat = ref(true)
+const showRight = ref(true)
+const rightTab = ref<'chat' | 'notes'>('chat')
 
 /** 框选完成：存入 store 供聊天发送时读取，并退出截图模式 */
 function onSelection(sel: SelectionResult): void {
@@ -182,6 +214,9 @@ async function loadBook(): Promise<void> {
     src.value = bookFileUrl(book.id)
     // 重开同一本书：恢复该书的会话与历史消息
     await chatStore.loadSessions(book.id)
+    // M11：恢复该书的高亮与笔记
+    await readerStore.loadHighlights()
+    await notesStore.load(book.id)
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -265,6 +300,56 @@ onMounted(loadBook)
   width: 380px;
   flex-shrink: 0;
   border-left: 1px solid var(--el-border-color-light);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--el-border-color-light);
+  background: var(--el-bg-color);
+}
+
+.right-tab {
+  flex: 1;
+  padding: 9px 0;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.right-tab.active {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+
+.right-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--el-color-primary);
+}
+
+.right-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-body > * {
+  flex: 1;
   min-height: 0;
 }
 </style>

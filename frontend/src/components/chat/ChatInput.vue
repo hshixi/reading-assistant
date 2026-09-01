@@ -53,7 +53,7 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { ActionType, Selection } from '@reading/shared'
 import { useChatStore } from '@/stores/chat'
-import { useReaderStore } from '@/stores/reader'
+import { toRect, useReaderStore } from '@/stores/reader'
 
 const store = useChatStore()
 const readerStore = useReaderStore()
@@ -107,6 +107,22 @@ async function sendAction(action: ActionType): Promise<void> {
           ? '把所选内容整理成笔记'
           : '提取所选内容的高亮摘要')
   text.value = ''
+
+  // M11 高亮：先把框选直接落库上页（不依赖 AI 回复，立即上页），
+  // 再发聊天让 AI 提炼摘录（回复仅作文本展示）。
+  if (action === 'highlight' && selection.value) {
+    try {
+      await readerStore.addHighlight({
+        pageNumber: selection.value.page,
+        rect: toRect(selection.value),
+        color: 'yellow',
+      })
+      ElMessage.success(`已在第 ${selection.value.page} 页添加高亮`)
+    } catch (err) {
+      ElMessage.error(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   await store.send(message, { action, imageDataUrl, selection: sel })
 }
 

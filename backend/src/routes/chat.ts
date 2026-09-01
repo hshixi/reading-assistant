@@ -9,10 +9,10 @@
  * AI 来源：默认走真实 DeepSeek；设 AI_MOCK=1 时退回 M8 的 mock 打字机（离线开发/测试用）。
  */
 import { Router, type Request, type Response, type NextFunction } from 'express'
-import type { ChatRequest, SseMeta } from '@reading/shared'
+import type { ChatRequest, SseMeta, SseSave } from '@reading/shared'
 import { ApiPaths } from '@reading/shared'
 import { getRepository } from '../db'
-import { Book, ChatMessage, ChatSession } from '../db/entities'
+import { Book, ChatMessage, ChatSession, Note } from '../db/entities'
 import { streamAiChunks } from '../services/chat-provider'
 import { isAbortError, streamDeepSeek, type DeepSeekInput } from '../services/deepseek'
 import { getAiSettings } from '../services/ai-settings'
@@ -21,6 +21,38 @@ import type { AppContext } from '../app'
 
 function sse(res: Response, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+}
+
+/**
+ * 从模型回复提取第一个 JSON 对象：
+ * 优先 ```json 代码块，兜底找文本里第一个平衡的 {…} 块。
+ */
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  const block = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  const candidates: string[] = block ? [block[1]] : []
+  const start = text.indexOf('{')
+  if (start >= 0) {
+    let depth = 0
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      else if (text[i] === '}') {
+        depth--
+        if (depth === 0) {
+          candidates.push(text.slice(start, i + 1))
+          break
+        }
+      }
+    }
+  }
+  for (const c of candidates) {
+    try {
+      const parsed = JSON.parse(c)
+      if (parsed && typeof parsed === 'object') return parsed
+    } catch {
+      /* 试下一个候选 */
+    }
+  }
+  return null
 }
 
 /** 新会话默认标题：取用户消息前 20 字 */
@@ -160,6 +192,28 @@ export function createChatRouter(context: AppContext): Router {
         }
       }
 
+      // AI 摘抄落库：action=note 且模型返回 JSON 笔记时，用前端框选 rect 落 notes 并广播 save
+      let saved: SseSave | null = null
+      if (!errMsg && body.action === 'note' && body.selection && text.trim()) {
+        const parsed = extractJsonObject(text)
+        if (parsed?.type === 'note') {
+          const content = String(parsed.content ?? parsed.title ?? '').trim()
+          if (content) {
+            const note = await getRepository(Note).save(
+              getRepository(Note).create({
+                bookId: body.bookId,
+                sessionId: session.id,
+                content,
+                pageNumber: body.selection.page,
+                rect: body.selection.rect,
+              }),
+            )
+            saved = { kind: 'note', id: note.id }
+            sse(res, 'save', saved)
+          }
+        }
+      }
+
       // 流结束落库（一次 UPDATE）
       await getRepository(ChatMessage).update(assistantMsg.id, {
         content: errMsg ? `⚠️ 出错了：${errMsg}` : text,
@@ -170,7 +224,6 @@ export function createChatRouter(context: AppContext): Router {
       })
 
       if (!errMsg) sse(res, 'done', {})
-      // M11 在此接入摘抄/高亮 event:save 落库
       res.end()
     } catch (err) {
       next(err)

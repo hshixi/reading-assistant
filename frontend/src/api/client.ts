@@ -38,6 +38,12 @@ export async function checkHealth(): Promise<HealthResponse> {
   return (await res.json()) as HealthResponse
 }
 
+/** 解析后端统一错误体 { error: { code, message } } */
+export async function parseApiError(res: Response): Promise<Error> {
+  const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null
+  return new Error(body?.error?.message ?? `请求失败：HTTP ${res.status}`)
+}
+
 /** 书籍文件下载地址（pdf.js 直接拉取，依赖后端 Range 支持） */
 export function bookFileUrl(id: number): string {
   return `${baseUrl()}${ApiPaths.bookFile(id)}`

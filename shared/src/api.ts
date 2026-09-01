@@ -15,14 +15,14 @@ export const ApiPaths = {
 
   chatStream: '/chat/stream',
 
-  notesForBook: (bookId: number) => `/books/${bookId}/notes`,
-  note: (id: number) => `/notes/${id}`,
+  notesForBook: (bookId: number | string) => `/books/${bookId}/notes`,
+  note: (id: number | string) => `/notes/${id}`,
 
-  highlightsForBook: (bookId: number) => `/books/${bookId}/highlights`,
-  highlight: (id: number) => `/highlights/${id}`,
+  highlightsForBook: (bookId: number | string) => `/books/${bookId}/highlights`,
+  highlight: (id: number | string) => `/highlights/${id}`,
 
-  annotationsForBook: (bookId: number) => `/books/${bookId}/annotations`,
-  annotation: (id: number) => `/annotations/${id}`,
+  annotationsForBook: (bookId: number | string) => `/books/${bookId}/annotations`,
+  annotation: (id: number | string) => `/annotations/${id}`,
 
   settings: '/settings',
 

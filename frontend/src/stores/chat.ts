@@ -5,6 +5,8 @@ import { reactive } from 'vue'
 import { defineStore } from 'pinia'
 import type { ActionType, ChatMessage, ChatSession, Selection } from '@reading/shared'
 import { createSession, listMessages, listSessions, streamChat } from '@/api/chat'
+import { useNotesStore } from '@/stores/notes'
+import { useReaderStore } from '@/stores/reader'
 
 export interface LocalMessage extends ChatMessage {
   /** 流式中 */
@@ -184,6 +186,11 @@ export const useChatStore = defineStore('chat', {
             onError: ({ message }) => {
               assistantMsg.streaming = false
               assistantMsg.error = message
+            },
+            onSave: ({ kind }) => {
+              // M11：AI 摘抄/高亮已落库 → 刷新对应面板（notes/highlights）
+              if (kind === 'note') void useNotesStore().refresh()
+              else if (kind === 'highlight') void useReaderStore().loadHighlights()
             },
           },
           this._abort.signal,

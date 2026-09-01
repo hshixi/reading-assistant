@@ -10,6 +10,7 @@ import { errorHandler, notFound } from './middleware/error'
 import { createBooksRouter } from './routes/books'
 import { createSessionsRouter } from './routes/sessions'
 import { createChatRouter } from './routes/chat'
+import { createAnnotationsRouter, createHighlightsRouter, createNotesRouter } from './routes/marks'
 import type { AppConfig } from './config'
 
 export interface AppContext {
@@ -48,6 +49,11 @@ export function createApp(context: AppContext): express.Express {
   // M8: 会话与消息 + 聊天流式
   api.use(createSessionsRouter(context))
   api.use(createChatRouter(context))
+
+  // M11: 笔记 / 高亮 / 注释
+  api.use(createNotesRouter())
+  api.use(createHighlightsRouter())
+  api.use(createAnnotationsRouter())
 
   app.use(API_PREFIX, api)
 
