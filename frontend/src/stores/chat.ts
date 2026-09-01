@@ -52,8 +52,26 @@ export const useChatStore = defineStore('chat', {
       return session.id
     },
 
+    /** 强制新建会话并切换过去（「新对话」按钮）：不同于 ensureSession 的复用语义 */
+    async newSession(): Promise<number> {
+      if (!this.bookId) throw new Error('尚未打开书籍')
+      this._abort?.abort()
+      this._abort = null
+      this.isStreaming = false
+      const session = await createSession(this.bookId)
+      this.sessions.unshift(session)
+      this.activeSessionId = session.id
+      this.messages = []
+      this.hasMore = false
+      return session.id
+    },
+
     async openSession(sessionId: number): Promise<void> {
       if (sessionId === this.activeSessionId) return
+      // 切会话时中止进行中的流，避免新会话里被旧流阻塞发送
+      this._abort?.abort()
+      this._abort = null
+      this.isStreaming = false
       this.activeSessionId = sessionId
       this.messages = []
       this.hasMore = true

@@ -73,6 +73,7 @@ export function createChatRouter(context: AppContext): Router {
       }
 
       // 3. 用户消息先落库（图片文件落盘在 M11 media-store 引入）
+      // 3.5 更新会话：未命名则用首条消息命名；触达时间上移（会话列表按最近在前）
       const contentType = body.imageDataUrl ? 'mixed' : 'text'
       const userMsg = await getRepository(ChatMessage).save(
         getRepository(ChatMessage).create({
@@ -84,6 +85,16 @@ export function createChatRouter(context: AppContext): Router {
           meta: body.action ? { action: body.action } : null,
         }),
       )
+
+      const now = new Date()
+      if (!session.title || session.title === '新对话') {
+        await getRepository(ChatSession).update(session.id, {
+          title: defaultTitle(message),
+          updatedAt: now,
+        })
+      } else {
+        await getRepository(ChatSession).update(session.id, { updatedAt: now })
+      }
 
       // 4. 助手消息占位
       const assistantMsg = await getRepository(ChatMessage).save(

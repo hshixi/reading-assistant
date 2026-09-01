@@ -192,6 +192,8 @@ export function createSessionsRouter(_context: AppContext): Router {
             meta: meta ?? null,
           }),
         )
+        // 消息新增也刷新会话触达时间（列表最近在前）
+        await getRepository(ChatSession).update(sessionId, { updatedAt: new Date() })
         res.status(201).json(messageToDto(msg))
       } catch (err) {
         next(err)

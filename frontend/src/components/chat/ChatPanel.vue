@@ -42,7 +42,7 @@ function onSessionCommand(id: unknown): void {
 }
 
 async function newSession(): Promise<void> {
-  await store.ensureSession()
+  await store.newSession()
 }
 </script>
 
