@@ -1,16 +1,19 @@
 /**
  * Electron 主进程入口。
- * - dev 模式：加载 Vite dev server（http://localhost:5173）
- * - prod 模式：加载打包后的 frontend/dist/index.html
- * 后端子进程（M13）在 prod 模式由本进程拉起，端口经 backend.port 文件握手。
+ * - dev 模式（未打包且未设 READING_APP_PROD=1）：后端由 scripts/dev.mjs 外部启动（8787），
+ *   窗口加载 Vite dev server。
+ * - prod 模式（打包，或 READING_APP_PROD=1 源码验证）：本进程拉起后端子进程（动态端口），
+ *   窗口加载打包后的 frontend/dist/index.html（file://）。
  */
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell } from 'electron'
 import path from 'node:path'
 import { registerIpc } from './ipc'
 import { frontendDistDir } from './paths'
+import { startBackend, stopBackend } from './backend-process'
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173'
-const isDev = !app.isPackaged
+/** 开发判断：未打包且未强制 prod（READING_APP_PROD=1 用于源码验证生产路径） */
+const isDev = !app.isPackaged && process.env.READING_APP_PROD !== '1'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -29,6 +32,19 @@ async function loadRenderer(win: BrowserWindow): Promise<void> {
     }
   }
   throw new Error(`无法加载 ${target}`)
+}
+
+/** macOS 应用菜单：保证复制/粘贴/全选等快捷键可用 */
+function installMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin'
+      ? ([{ role: 'appMenu' }] as Electron.MenuItemConstructorOptions[])
+      : []),
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
 function createWindow(): void {
@@ -73,6 +89,11 @@ function createWindow(): void {
 
 app.setName('Reading Assistant')
 
+// 测试/验证便利：允许把 userData（含 DB/书库）指到别处，避免污染真实用户目录
+if (process.env.READING_APP_USER_DATA) {
+  app.setPath('userData', process.env.READING_APP_USER_DATA)
+}
+
 // 单实例锁：避免多个后端进程与端口冲突
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -85,7 +106,22 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
-    registerIpc()
+    installMenu()
+    registerIpc(isDev)
+
+    // prod：立即拉起后端子进程（渲染层经 IPC 等待其就绪）
+    if (!isDev) {
+      void startBackend()
+        .then((p) => {
+          mainWindow?.webContents.send('backend:status', 'ok')
+          console.log(`[electron] 后端就绪，端口 ${p}`)
+        })
+        .catch((err) => {
+          console.error('[electron] 后端启动失败:', err)
+          mainWindow?.webContents.send('backend:status', 'error')
+        })
+    }
+
     createWindow()
 
     app.on('activate', () => {
@@ -95,5 +131,10 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit()
+  })
+
+  // 退出前清理后端子进程
+  app.on('before-quit', () => {
+    stopBackend()
   })
 }
