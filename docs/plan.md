@@ -74,6 +74,34 @@ V2 规划与逐模块根因见 `.claude/plans/mac-app-dmg-app-1-pdf-2-ai-ai-high
 **封面/进度的发布前修复教训**：仅靠 DOM（naturalWidth/complete）判断"封面已显示"不可靠 ——
 需抓屏逐像素或校验 PNG alpha（曾误判：图片元素 530×900 解码成功但全透明 → 书架只显示占位）。
 
+## V2.3 打包版修复发布要点（v0.2.1，2026-09-02）
+
+发布 0.2.1，修 0.2.0 dmg 的两个**仅打包环境可见**问题。对外改动见根目录 `CHANGELOG.md`；
+本节记录根因与实现关键点。
+
+**根因共性**：dev 走 Vite `http://localhost:5173` + 全量 node_modules + 无 CSP，与打包
+（`file://` 加载 dist-frontend + 严格 CSP + 裁剪 node_modules）差异大，两类问题 dev 流程都测不出。
+**教训**：发版前用 `dev:prod`（就是 file:// + CSP + 裁剪版后端）当"打包预演"过一遍，而不是只信
+纯 dev 测试。
+
+**问题 1 · 书架「解析中…」卡死（pageCount 永远 NULL）**
+- 打包 `release.mjs` 裁 pdfjs-dist 只带 `legacy/build/pdf.mjs`，漏 `pdf.worker.mjs`：
+  打包后端异步算页数每次报「Cannot find module pdf.worker.mjs」而失败。
+- 修：裁剪补全 `pdf.worker.mjs` + `wasm/`；`page-count.ts` import 前垫最小 `DOMMatrix` 桩
+  （打包后端无 canvas，pdf.mjs 顶层 `new DOMMatrix()` 直接崩）；
+  `books.ts` PATCH 路由新增接受 `pageCount`；ReaderView 打开读到 numPages 且 DB 仍 NULL 时
+  回填落库（自愈历史「解析中」书）；ShelfView 上传后 `ensurePageCount` 轮询刷新卡片。
+
+**问题 2 · 翻页空白（扫描 PDF 的 JBIG2/JPEG2000 解码失败）**
+- pdf.js 5.7 的 jbig2/openjpeg/qcms 解码器走 wasm（`wasmUrl` 拼文件名加载），打包版既没带
+  wasm 文件、渲染层也没传 `wasmUrl` → 扫描页 XObject 全被忽略 → 首页正常、翻页全白。
+- 修：后端 `/pdfjs/wasm/:file` 白名单静态路由（file:// 页不能 fetch file:// wasm，改走
+  `http://127.0.0.1`；`connect-src` 早已放行）；PdfViewer `getDocument({ wasmUrl })`；
+  **CSP 加 `wasm-unsafe-eval`** —— file:// 页 `script-src 'self'` 会拦 `WebAssembly.instantiate()`，
+  仅放行 wasm 编译（不放行任意 eval），解码器即时生效。
+- 0.2.1 dmg 实测：300 页 PDF 导入即显示页数；遗留「解析中」书打开自愈；翻页至正文深处渲染正常、
+  控制台无 JBig2/CSP 报错。
+
 ## 分支纪律
 
 - `main` 为保护分支，仅接受 `feat/*` 的 squash merge。

@@ -4,9 +4,12 @@
  */
 import express from 'express'
 import cors from 'cors'
+import fs from 'node:fs'
+import path from 'node:path'
 import type { DataSource } from 'typeorm'
 import { API_PREFIX, ApiPaths } from '@reading/shared'
 import { errorHandler, notFound } from './middleware/error'
+import { safeWasmFile } from './services/pdfjs-assets'
 import { createBooksRouter } from './routes/books'
 import { createSessionsRouter } from './routes/sessions'
 import { createChatRouter } from './routes/chat'
@@ -60,6 +63,28 @@ export function createApp(context: AppContext): express.Express {
   api.use(createSettingsRouter(context))
 
   app.use(API_PREFIX, api)
+
+  // 渲染层 pdf.js wasm 解码器资源（JBIG2/JPEG2000/ICC）。渲染层 origin 为 file://，
+  // 无法直接 fetch file://，统一经 http://127.0.0.1 提供；CORS 已在顶部放开。
+  // 路径形如 GET /pdfjs/wasm/jbig2.wasm（pdf.js 用 wasmUrl 拼文件名请求）。
+  app.get('/pdfjs/wasm/:file', (req, res, next) => {
+    try {
+      const fp = safeWasmFile(req.params.file ?? '')
+      if (!fp) {
+        res.status(404).json({ error: { code: 'WASM_NOT_FOUND', message: '资源不存在' } })
+        return
+      }
+      const ext = path.extname(fp).toLowerCase()
+      res.setHeader(
+        'Content-Type',
+        ext === '.wasm' ? 'application/wasm' : ext === '.js' ? 'text/javascript' : 'application/octet-stream',
+      )
+      res.setHeader('Cache-Control', 'public, max-age=86400')
+      fs.createReadStream(fp).pipe(res)
+    } catch (err) {
+      next(err)
+    }
+  })
 
   app.use(notFound)
   app.use(errorHandler)

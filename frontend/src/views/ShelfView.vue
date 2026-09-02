@@ -145,6 +145,8 @@ async function onFileChange(e: Event): Promise<void> {
   try {
     const book = await store.upload(file)
     ElMessage.success(`已导入《${book.title}》`)
+    // 后台等待后端异步页数解析完成并刷新卡片（解析中… → N 页）
+    void store.ensurePageCount(book.id)
   } catch (err) {
     ElMessage.error(err instanceof Error ? err.message : String(err))
   } finally {

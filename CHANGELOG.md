@@ -2,6 +2,29 @@
 
 本文件按版本记录对外改动要点，供后续回溯（详细实现与验收见 `docs/plan.md`、`docs/smoke-test.md`）。
 
+## 0.2.1（2026-09-02）
+
+0.2.0 打包版问题修复发布。两个问题都只在**打包环境**出现（dev 用 Vite http + 全量 node_modules + 无 CSP，测不到 file:// + CSP + 裁剪 node_modules 的组合），用户装 dmg 后上传 300 页 PDF 时触发。
+
+### 修复
+
+- **书架「解析中…」卡死（打包版）**：打包脚本 `release.mjs` 裁剪 pdfjs-dist 时只留了 `legacy/build/pdf.mjs`，漏掉同目录 `pdf.worker.mjs` —— 打包后端每次异步算页数都报「Cannot find module pdf.worker.mjs」而失败，DB `page_count` 永远 NULL，卡片停留在「解析中…」。修复：
+  - 裁剪补全 `pdf.worker.mjs` + `wasm/` 目录（后端页数解析与渲染层解码共用）。
+  - 后端 `page-count.ts` 在 import pdf.mjs 前垫最小 `DOMMatrix` 桩（打包后端无 canvas，否则顶层 `new DOMMatrix()` 崩溃）。
+  - 阅读器打开兜底回填：读到 `numPages` 且 DB 仍为 NULL 时 `PATCH books/:id pageCount`，历史遗留「解析中」书打开一次即自愈（`books.ts` PATCH 路由新增接受 `pageCount`）。
+  - 上传成功后书架轮询 `ensurePageCount`，解析完成即从「解析中…」刷成真实页数。
+- **翻页空白（打包版扫描 PDF）**：JBIG2/JPEG2000/ICC 解码 wasm 未随包、渲染层也未传 `wasmUrl`，扫描页 XObject 解码失败被忽略 → 封面（首页）正常、向下滑动全空白。修复：
+  - 后端新增 `/pdfjs/wasm/:file` 静态路由（仅服务 pdfjs-dist `wasm/` 目录内白名单文件），渲染层 file:// 经 `http://127.0.0.1` 拉 wasm。
+  - `PdfViewer` 的 `getDocument` 传 `wasmUrl`（指向该路由）。
+  - CSP 增加 `wasm-unsafe-eval`：生产 `file://` 页 `script-src 'self'` 会拦 `WebAssembly.instantiate()`，解码器编译被 CSP 拒绝后回退 JS 模块又因跨源被拦 → 只放行 wasm 编译，不放行任意 eval。
+
+### 验证（0.2.1 dmg 实测）
+
+- 导入用户 300 页 PDF → 卡片直接显示「300 页」，无「解析中」卡死。
+- 已有「解析中」遗留书：打开一次后回书架 →「300 页」。
+- 翻页至正文深处：内容正常渲染，控制台无 `JBig2Error` / 无 CSP 拒绝。
+- 回归：`npm run lint` + 各包 `typecheck` 全绿。
+
 ## 0.2.0（2026-09-02）
 
 V2 重构后的首个正式发布版。里程碑：main 分支 V2 N1–N10（阅读器/高亮/笔记大改）→ V2.1 QA 五项修复 → V2.2（书架封面 + 阅读进度记忆）。

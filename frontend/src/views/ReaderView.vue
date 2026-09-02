@@ -324,6 +324,16 @@ function onSelection(sel: SelectionResult): void {
 function onPageCount(count: number): void {
   pageCount.value = count
   readerStore.pageCount = count
+  // 后端异步解析失败/未完成时（DB pageCount 仍 null），用阅读器实测 numPages 回填，
+  // 让书架「解析中…」能落成真实页数（旧书打开一次即自愈）
+  const book = readerStore.book
+  if (book && !book.pageCount && count >= 1) {
+    void updateBook(book.id, { pageCount: count })
+      .then((updated) => {
+        if (readerStore.book?.id === book.id) readerStore.book = updated
+      })
+      .catch((err) => console.warn('[reader] 回填总页数失败:', err instanceof Error ? err.message : err))
+  }
 }
 
 /* ---- V2-F6：PDF 页内右键 → 若命中「文本选区」则弹自定义菜单 ---- */

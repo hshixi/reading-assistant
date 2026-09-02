@@ -5,7 +5,7 @@
  *  - GET    /api/books/:id                 详情
  *  - GET    /api/books/:id/file            Range 流式下载（206，pdf.js 按需加载必需）
  *  - GET    /api/books/:id/cover           PDF 首页封面 PNG（懒生成 + 磁盘缓存）
- *  - PATCH  /api/books/:id                 改标题/作者/阅读进度(lastPage)
+ *  - PATCH  /api/books/:id                 改标题/作者/阅读进度(lastPage)/总页数(pageCount)
  *  - DELETE /api/books/:id                 删除（DB 级联 → 文件目录清理）
  */
 import { Router, type Request, type Response, type NextFunction } from 'express'
@@ -219,6 +219,11 @@ export function createBooksRouter(context: AppContext): Router {
       if ('lastPage' in (req.body ?? {})) {
         const v = req.body.lastPage
         patch.lastPage = v == null ? null : Number.isInteger(v) && v >= 1 ? Math.min(v, 100_000) : book.lastPage
+      }
+      // 总页数回填：阅读器读到 numPages 且 DB 仍 null 时写回；整数 ≥1 才写入
+      if ('pageCount' in (req.body ?? {})) {
+        const v = req.body.pageCount
+        patch.pageCount = v == null ? null : Number.isInteger(v) && v >= 1 ? Math.min(v, 100_000) : book.pageCount
       }
       if (Object.keys(patch).length > 0) {
         repo.merge(book, patch)

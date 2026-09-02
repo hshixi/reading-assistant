@@ -26,6 +26,8 @@ export interface BookPatch {
   author?: string | null
   /** 阅读进度页：整页翻页/滚动退出时更新；null 可清除 */
   lastPage?: number | null
+  /** 总页数回填：阅读器拿到 numPages 且 DB 仍为 null 时写回（缓解上传时后端解析失败/未完成） */
+  pageCount?: number | null
 }
 
 export interface ChatSession {

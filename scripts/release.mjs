@@ -15,7 +15,8 @@
  *     - node 二进制（默认从 nodejs.org 下载 v24.16.0-darwin-<arch>，可用 --node-binary 覆盖）
  *     - node_modules/better-sqlite3（仅 lib+build/Release 原生二进制；跨架构时
  *       prebuild-install --arch 拉目标架构预编译）+ bindings + file-uri-to-path
- *     - node_modules/pdfjs-dist（裁剪为 package.json + legacy/build/pdf.mjs，页数解析入口）
+ *     - node_modules/pdfjs-dist（裁剪为 package.json + legacy/build/pdf.mjs + pdf.worker.mjs
+ *       页数解析入口，另带 wasm/ 供后端 /pdfjs/wasm/ 路由给渲染层 JBIG2 等解码）
  *  3. electron-builder --mac dmg（每架构一份，extraResources 指向对应资源目录）
  *
  * 后端以真实 node 运行（better-sqlite3 原生模块按系统 Node ABI 构建），
@@ -120,17 +121,26 @@ function prepareBackendResources(arch) {
     fs.cpSync(path.join(rootDir, 'node_modules', dep), path.join(nm, dep), { recursive: true })
   }
 
-  // pdfjs-dist 裁剪：页数解析入口 pdf.mjs 自包含（无内部 import），只带 package.json + 该文件
+  // pdfjs-dist 裁剪，后端运行时需要三样：
+  //  - legacy/build/pdf.mjs + pdf.worker.mjs：页数解析入口。pdf.mjs 在 node 下走 fake
+  //    worker，会按相对路径 import 同目录 pdf.worker.mjs —— 早期只带 pdf.mjs 导致
+  //    打包版 countPdfPages 每次报「Cannot find module pdf.worker.mjs」而失败
+  //    （书架卡片永远「解析中…」）。
+  //  - wasm/：渲染层 pdf.js 的 JBIG2/JPEG2000/ICC 解码器（后端 /pdfjs/wasm/ 路由据此
+  //    提供）。整目录拷贝（含 *_nowasm_fallback.js），裁剪注释与实现保持一致。
+  const pdfSrc = path.join(rootDir, 'node_modules', 'pdfjs-dist')
   const pdfDir = path.join(nm, 'pdfjs-dist')
   fs.mkdirSync(path.join(pdfDir, 'legacy', 'build'), { recursive: true })
+  fs.copyFileSync(path.join(pdfSrc, 'package.json'), path.join(pdfDir, 'package.json'))
   fs.copyFileSync(
-    path.join(rootDir, 'node_modules', 'pdfjs-dist', 'package.json'),
-    path.join(pdfDir, 'package.json'),
-  )
-  fs.copyFileSync(
-    path.join(rootDir, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs'),
+    path.join(pdfSrc, 'legacy', 'build', 'pdf.mjs'),
     path.join(pdfDir, 'legacy', 'build', 'pdf.mjs'),
   )
+  fs.copyFileSync(
+    path.join(pdfSrc, 'legacy', 'build', 'pdf.worker.mjs'),
+    path.join(pdfDir, 'legacy', 'build', 'pdf.worker.mjs'),
+  )
+  fs.cpSync(path.join(pdfSrc, 'wasm'), path.join(pdfDir, 'wasm'), { recursive: true })
 
   console.log(`[release] resources/${arch}/backend 就绪`)
 }

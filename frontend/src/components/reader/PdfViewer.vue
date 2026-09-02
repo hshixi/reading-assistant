@@ -505,7 +505,10 @@ async function loadDoc(): Promise<void> {
   visiblePages.value = []
   try {
     await ensureFakeWorker()
-    const doc = await pdfjsLib.getDocument({ url: props.src }).promise
+    // V2.3：pdf.js v5 的 JBIG2/JPEG2000/ICC 解码需 .wasm（wasmUrl 必须带尾斜杠）。
+    // 渲染层 file:// 无法 fetch file:// 资源，由后端经 http://127.0.0.1/pdfjs/wasm/ 提供。
+    const wasmUrl = new URL(props.src, window.location.href).origin + '/pdfjs/wasm/'
+    const doc = await pdfjsLib.getDocument({ url: props.src, wasmUrl }).promise
     pdfDoc.value = doc
     pageCount.value = doc.numPages
     emit('page-count', pageCount.value)
