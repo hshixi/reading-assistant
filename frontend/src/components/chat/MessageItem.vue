@@ -110,7 +110,7 @@ const rendered = computed(() => {
   margin-bottom: 0;
 }
 .msg-text :deep(pre) {
-  background: #f6f8fa;
+  background: var(--el-fill-color-lighter);
   padding: 10px;
   border-radius: 6px;
   overflow-x: auto;

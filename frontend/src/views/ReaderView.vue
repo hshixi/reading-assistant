@@ -18,6 +18,7 @@
         v-if="loadError"
         class="header-error"
       >{{ loadError }}</span>
+      <ThemeToggle class="header-theme" />
     </header>
 
     <div class="reader-toolbar">
@@ -162,6 +163,7 @@ import SelectionOverlay, {
 import HighlightLayer from '@/components/reader/HighlightLayer.vue'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
 import NotesPanel from '@/components/notes/NotesPanel.vue'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 import { getBook } from '@/api/books'
 import { bookFileUrl } from '@/api/client'
 import { useReaderStore } from '@/stores/reader'
@@ -252,11 +254,16 @@ onMounted(loadBook)
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 .header-error {
   color: var(--el-color-danger);
   font-size: 13px;
-  margin-left: auto;
+}
+.header-theme {
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .reader-toolbar {

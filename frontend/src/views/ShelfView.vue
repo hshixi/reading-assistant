@@ -17,6 +17,7 @@
           <el-icon><Setting /></el-icon>
           <span>设置</span>
         </el-button>
+        <ThemeToggle />
       </div>
       <input
         ref="fileInput"
@@ -108,6 +109,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Files, Cpu, Setting } from '@element-plus/icons-vue'
 import type { Book } from '@reading/shared'
 import { useBookStore } from '@/stores/book'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 
 const router = useRouter()
 const store = useBookStore()

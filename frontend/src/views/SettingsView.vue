@@ -10,6 +10,7 @@
           <span>书架</span>
         </el-button>
         <h2>设置</h2>
+        <ThemeToggle class="settings-theme" />
       </header>
 
       <el-form
@@ -110,6 +111,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { useSettingsStore } from '@/stores/settings'
+import ThemeToggle from '@/components/common/ThemeToggle.vue'
 
 const store = useSettingsStore()
 
@@ -189,6 +191,9 @@ onMounted(load)
   align-items: center;
   gap: 12px;
   margin-bottom: 8px;
+}
+.settings-theme {
+  margin-left: auto;
 }
 .settings-header h2 {
   margin: 0;
