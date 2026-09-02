@@ -44,6 +44,10 @@ export class Book {
   @Column({ name: 'last_opened_at', type: 'datetime', nullable: true })
   lastOpenedAt!: string | null
 
+  /** 阅读进度：最近一次离开该书时的页码（重开自动定位；未读过为 null） */
+  @Column({ name: 'last_page', type: 'int', nullable: true })
+  lastPage!: number | null
+
   @Index()
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date

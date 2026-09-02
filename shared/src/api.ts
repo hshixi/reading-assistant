@@ -8,6 +8,7 @@ export const ApiPaths = {
   books: '/books',
   book: (id: number | string) => `/books/${id}`,
   bookFile: (id: number | string) => `/books/${id}/file`,
+  bookCover: (id: number | string) => `/books/${id}/cover`,
 
   sessionsForBook: (bookId: number | string) => `/books/${bookId}/sessions`,
   session: (id: number | string) => `/sessions/${id}`,

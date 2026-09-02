@@ -96,7 +96,12 @@ async function ensureFakeWorker(): Promise<void> {
 }
 
 const props = defineProps<{ src: string }>()
-const emit = defineEmits<{ 'page-count': [count: number]; 'page-number': [n: number] }>()
+const emit = defineEmits<{
+  'page-count': [count: number]
+  'page-number': [n: number]
+  /** 文档加载并完成首屏布局/自适应（fitWidth 后）：宿主可安全 goToPage 恢复到上次阅读页 */
+  loaded: []
+}>()
 
 const containerRef = ref<HTMLDivElement>()
 // 必须用 shallowRef：pdf.js 文档对象含 class 私有字段，Vue 深度 reactive 代理会破坏其身份
@@ -511,6 +516,7 @@ async function loadDoc(): Promise<void> {
     await syncVisibleCanvases()
     void syncTextLayers()
     updateCurrentPage()
+    emit('loaded')
   } catch (err) {
     console.error('[pdf] 加载失败:', err)
     error.value = err instanceof Error ? err.message : String(err)

@@ -66,6 +66,9 @@ body,
 #app {
   height: 100%;
   margin: 0;
+  /* V2.1-P5：锁死文档级滚动 —— 整页只能由各视图内部滚动容器滚动
+     （PDF 区 .pdf-viewer / 书架 / 设置页 / 右侧消息列表），杜绝外壳整体上下滑 */
+  overflow: hidden;
   font-family:
     -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', Helvetica, Arial,
     sans-serif;
@@ -77,6 +80,7 @@ body,
   height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .backend-wait {

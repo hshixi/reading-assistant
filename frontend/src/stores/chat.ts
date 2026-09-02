@@ -3,7 +3,7 @@
  */
 import { reactive } from 'vue'
 import { defineStore } from 'pinia'
-import type { ActionType, ChatMessage, ChatSession, Selection } from '@reading/shared'
+import type { ActionType, ChatMessage, ChatSession, MessageMeta, Selection } from '@reading/shared'
 import { createSession, listMessages, listSessions, streamChat } from '@/api/chat'
 import { useNotesStore } from '@/stores/notes'
 import { useReaderStore } from '@/stores/reader'
@@ -132,6 +132,15 @@ export const useChatStore = defineStore('chat', {
       const bookId = this.bookId!
 
       // 本地追加用户消息
+      // V2.1-P2：选中原文 excerptText + 页码并入 meta，发送瞬间即显示引用块（与后端落库一致）
+      const excerpt =
+        typeof opts.excerptText === 'string' && opts.excerptText.trim()
+          ? opts.excerptText.trim()
+          : undefined
+      const userMeta: MessageMeta = {}
+      if (opts.action) userMeta.action = opts.action
+      if (excerpt) userMeta.excerptText = excerpt
+      if (opts.selection && Number.isFinite(opts.selection.page)) userMeta.page = opts.selection.page
       const userMsg: LocalMessage = {
         id: -Date.now(),
         sessionId,
@@ -139,7 +148,7 @@ export const useChatStore = defineStore('chat', {
         contentType: opts.imageDataUrl ? 'mixed' : 'text',
         content: clean,
         imageRelPath: null,
-        meta: opts.action ? { action: opts.action } : null,
+        meta: Object.keys(userMeta).length > 0 ? userMeta : null,
         createdAt: new Date().toISOString(),
         imageDataUrl: opts.imageDataUrl,
       }

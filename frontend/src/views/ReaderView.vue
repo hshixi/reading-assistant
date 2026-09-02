@@ -97,6 +97,7 @@
           :src="src"
           @page-count="onPageCount"
           @page-number="page = $event"
+          @loaded="onPdfLoaded"
         >
           <!-- M11：每页包裹层内渲染高亮覆盖层（slot 按页码传入，百分比定位随缩放自适应） -->
           <template #page="{ num }">
@@ -216,12 +217,12 @@ import TextSelectionMenu, {
 import HighlightPopover from '@/components/reader/HighlightPopover.vue'
 import HighlightsPanel from '@/components/highlights/HighlightsPanel.vue'
 import type { TextSelectionPayload } from '@/stores/reader'
-import type { Highlight, Rect, Note } from '@reading/shared'
+import type { Book, Highlight, Rect, Note } from '@reading/shared'
 import type { NoteDraft } from '@/components/notes/noteDraft'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
 import NotesPanel from '@/components/notes/NotesPanel.vue'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
-import { getBook } from '@/api/books'
+import { getBook, updateBook } from '@/api/books'
 import { bookFileUrl } from '@/api/client'
 import { useReaderStore } from '@/stores/reader'
 import { useChatStore } from '@/stores/chat'
@@ -566,7 +567,51 @@ async function goTo(n: number): Promise<void> {
   await viewerRef.value?.goToPage(page.value)
 }
 
+/* ---- V2.2：阅读进度记忆 —— 退出记住 lastPage，重开自动定位上次阅读页 ---- */
+
+const SAVE_DEBOUNCE_MS = 1200
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+
+/** 把某书当前页写入后端（钳制到 [1, pageCount]）；失败仅告警不打断阅读 */
+function savePosition(book: Book | null, n: number): void {
+  if (!book || !src.value || loadError.value) return
+  if (!pageCount.value) return // 文档页数未知前不落库（初始 page=1 不代表已定位到首屏）
+  const target = Math.max(1, Math.min(Math.round(n) || 1, pageCount.value))
+  void updateBook(book.id, { lastPage: target })
+    .then((updated) => {
+      if (readerStore.book?.id === book.id) readerStore.book = updated
+    })
+    .catch((err) => console.warn('[reader] 保存阅读进度失败:', err instanceof Error ? err.message : err))
+}
+
+/** 页码变化防抖落库（滚动翻页不每页都打 PATCH，停顿后才写） */
+function scheduleSave(): void {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    saveTimer = undefined
+    savePosition(readerStore.book, page.value)
+  }, SAVE_DEBOUNCE_MS)
+}
+
+/** 退出阅读器/切书前立即落库（清掉未到期的防抖，避免延迟回写因卸载而丢失） */
+function flushSave(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = undefined
+  }
+  if (readerStore.book) savePosition(readerStore.book, page.value)
+}
+
+/** PdfViewer 完成首屏布局（@loaded）→ 恢复到上次阅读页码；无进度则停在首页 */
+function onPdfLoaded(): void {
+  const last = readerStore.book?.lastPage
+  if (last && last >= 1 && pageCount.value) {
+    void goTo(Math.min(last, pageCount.value))
+  }
+}
+
 async function loadBook(): Promise<void> {
+  flushSave() // 离开当前书前先把此前的阅读页码落库（含路由直接切到另一本书）
   loading.value = true
   loadError.value = ''
   chatStore.reset()
@@ -587,9 +632,11 @@ async function loadBook(): Promise<void> {
 }
 
 watch(bookId, loadBook)
+watch(page, scheduleSave)
 onMounted(loadBook)
 
 onBeforeUnmount(() => {
+  flushSave() // 阅读器关闭：立即落库当前页码（不依赖防抖延迟）
   window.removeEventListener('mousemove', onSplitMove)
   window.removeEventListener('mouseup', endSplitDrag)
   document.body.classList.remove('resizing-cols')

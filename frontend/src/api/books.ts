@@ -1,7 +1,7 @@
 /**
  * 书籍相关 API 调用。统一走后端 baseURL，错误解析 { error: { code, message } }。
  */
-import type { Book } from '@reading/shared'
+import type { Book, BookPatch } from '@reading/shared'
 import { ApiPaths, baseUrl } from './client'
 
 async function parseError(res: Response): Promise<Error> {
@@ -17,6 +17,16 @@ export async function listBooks(): Promise<Book[]> {
 
 export async function getBook(id: number): Promise<Book> {
   const res = await fetch(`${baseUrl()}${ApiPaths.book(id)}`)
+  if (!res.ok) throw await parseError(res)
+  return res.json()
+}
+
+export async function updateBook(id: number, patch: BookPatch): Promise<Book> {
+  const res = await fetch(`${baseUrl()}${ApiPaths.book(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
   if (!res.ok) throw await parseError(res)
   return res.json()
 }

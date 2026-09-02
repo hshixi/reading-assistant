@@ -23,6 +23,11 @@ export class BookStore {
     return path.join(this.booksDir, String(id), 'original.pdf')
   }
 
+  /** books/{id}/cover.png —— PDF 首页封面缩略图（懒生成，随书删除清理） */
+  coverPath(id: number): string {
+    return path.join(this.booksDir, String(id), 'cover.png')
+  }
+
   /** DB 中存盘的相对路径（相对 dataDir） */
   relPath(id: number): string {
     return `books/${id}/original.pdf`

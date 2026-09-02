@@ -59,6 +59,11 @@
             {{ book.title }}
           </div>
         </template>
+        <!-- V2.1-F：卡片内嵌 PDF 首页封面预览，标题 + 封面一眼认出是哪个文件 -->
+        <BookCover
+          :book-id="book.id"
+          :title="book.title"
+        />
         <div class="book-meta">
           <div class="meta-row">
             <el-icon><Document /></el-icon>
@@ -110,6 +115,7 @@ import { Document, Files, Cpu, Setting } from '@element-plus/icons-vue'
 import type { Book } from '@reading/shared'
 import { useBookStore } from '@/stores/book'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
+import BookCover from '@/components/common/BookCover.vue'
 
 const router = useRouter()
 const store = useBookStore()

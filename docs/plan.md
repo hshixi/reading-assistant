@@ -43,6 +43,37 @@ V2 规划与逐模块根因见 `.claude/plans/mac-app-dmg-app-1-pdf-2-ai-ai-high
 无 88px 偏移）、主题切换、右键高亮落库/删除、右键翻译流式、框选截图发送即清、提及动作落库，
 均已 CDP 端到端/手测通过；回归产生的会话/消息/笔记/高亮测试数据已清理（notes/highlights/sessions=0）。
 
+## V2.1 / V2.2 发布要点（v0.2.0，2026-09-02）
+
+发布版本 0.2.0，交付 V2 重构全量（N1–N10）+ V2.1 QA 五项修复 + V2.2 两项功能。
+对外改动一览见根目录 `CHANGELOG.md`；本节记录实现上的关键点，供后续维护回溯。
+
+**V2.1 修复**
+- P1 输入区布局：ChatPanel 输入区固定约 1/5 高内部滚动，消息列表 flex:1 吃余量。
+- P2 原文引用：chat.ts/stores/chat.ts 把 excerptText + page 并入 meta 落库；MessageItem 渲染引用块。
+- P3 提及识别：ChatInput 触发词表扩充 + 句内落库动作兜底扫描 + 剥离最长前缀优先排序。
+- P4 UTF-8 文件名：books.ts 上传 multer `defParamCharset: 'utf8'`。
+- P5 页面滚动锁死：App.vue `overflow:hidden`，滚动只在各视图内部容器。
+
+**V2.2 书架封面（懒生成 + 磁盘缓存）**
+- 后端 `GET /books/:id/cover`：缺封面才生成，写失败哨兵 `cover.png.failed` 防反复重试，
+  成功删哨兵并 `Cache-Control: public, max-age=86400`；删除书整目录清理自动带走封面。
+- 渲染器 `backend/src/services/cover.ts`：**Quick Look（`qlmanage -t`）** 而非 sips ——
+  sips 对部分 PDF 输出全透明（alpha=0）/纯白图片，书架只见占位（实测本应用 PDF 复现）；
+  qlmanage 正确出不透明 900px 封面。唯一临时目录 + 原子 rename，并发安全。
+- 前端 `BookCover.vue`：图片始终渲染 + 挂载完成态校验 + @error 自动带参重试一次 +
+  8s 超时先显示占位（图到达后 @load 自行顶替），无"占位钉死"路径。
+
+**V2.2 阅读进度记忆（lastPage）**
+- Book 实体新增 `last_page`（int 可空，TypeORM synchronize 启动自动加列）；
+  shared Book/BookPatch 增加 lastPage；books PATCH 支持写/清（整数 ≥1 校验）。
+- ReaderView：页码变化防抖 1.2s PATCH 落库；卸载/切书前立即 flush（不依赖防抖）；
+  PdfViewer 完成首屏布局后新增 `@loaded` 事件，重开据此 goTo 上次页码。各书进度独立。
+- CDP 实测：119 页退出→重开自动定位 119；无进度书停首页；book1/book3 各自记忆互不影响。
+
+**封面/进度的发布前修复教训**：仅靠 DOM（naturalWidth/complete）判断"封面已显示"不可靠 ——
+需抓屏逐像素或校验 PNG alpha（曾误判：图片元素 530×900 解码成功但全透明 → 书架只显示占位）。
+
 ## 分支纪律
 
 - `main` 为保护分支，仅接受 `feat/*` 的 squash merge。

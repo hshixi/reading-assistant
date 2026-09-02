@@ -49,4 +49,9 @@ export function bookFileUrl(id: number): string {
   return `${baseUrl()}${ApiPaths.bookFile(id)}`
 }
 
+/** 书籍首页封面预览地址（书架 <img> 直用；后端懒生成，无封面时 404 由组件兜底） */
+export function bookCoverUrl(id: number): string {
+  return `${baseUrl()}${ApiPaths.bookCover(id)}`
+}
+
 export { ApiPaths }

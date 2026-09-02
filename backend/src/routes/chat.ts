@@ -106,6 +106,17 @@ export function createChatRouter(context: AppContext): Router {
 
       // 3. 用户消息先落库（图片文件落盘在 M11 media-store 引入）
       // 3.5 更新会话：未命名则用首条消息命名；触达时间上移（会话列表按最近在前）
+      // V2.1-P2：把随消息的选中原文 excerptText + 页码并入 meta，历史回看能展示用户问的是哪段
+      const excerpt =
+        typeof body.excerptText === 'string' && body.excerptText.trim()
+          ? body.excerptText.trim()
+          : undefined
+      const userMeta = {
+        action: body.action,
+        excerptText: excerpt,
+        page: body.selection && Number.isFinite(body.selection.page) ? body.selection.page : undefined,
+      }
+      const userHasMeta = Boolean(userMeta.action || userMeta.excerptText || userMeta.page)
       const contentType = body.imageDataUrl ? 'mixed' : 'text'
       const userMsg = await getRepository(ChatMessage).save(
         getRepository(ChatMessage).create({
@@ -114,7 +125,7 @@ export function createChatRouter(context: AppContext): Router {
           contentType,
           content: message,
           imageRelPath: null,
-          meta: body.action ? { action: body.action } : null,
+          meta: userHasMeta ? userMeta : null,
         }),
       )
 

@@ -20,6 +20,27 @@
         class="msg-text markdown-body"
         v-html="rendered"
       />
+      <!-- V2.1-P2：用户消息若带选中原文，展示引用块（历史回看知道问的是哪段原文） -->
+      <div
+        v-if="msg.role === 'user' && msg.meta?.excerptText"
+        class="msg-excerpt"
+        :title="msg.meta.excerptText"
+      >
+        <div class="msg-excerpt-head">
+          <span
+            v-if="msg.meta.action"
+            class="msg-excerpt-tag"
+          >{{ actionLabel(msg.meta.action) }}</span>
+          <span class="msg-excerpt-title">选中原文</span>
+          <span
+            v-if="msg.meta.page"
+            class="msg-excerpt-page"
+          >第 {{ msg.meta.page }} 页</span>
+        </div>
+        <div class="msg-excerpt-body">
+          {{ msg.meta.excerptText }}
+        </div>
+      </div>
       <div
         v-if="msg.streaming && !msg.content"
         class="thinking"
@@ -50,9 +71,22 @@
 import { computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import type { ActionType } from '@reading/shared'
 import type { LocalMessage } from '@/stores/chat'
 
 const props = defineProps<{ msg: LocalMessage }>()
+
+/** V2.1-P2：meta.action 枚举 → 人类可读小标签（引用块头部展示动作来源） */
+const ACTION_LABELS: Record<ActionType, string> = {
+  translate: '翻译',
+  explain: '解释',
+  note: '笔记',
+  highlight: '高亮',
+}
+
+function actionLabel(a: ActionType): string {
+  return ACTION_LABELS[a] ?? a
+}
 
 const rendered = computed(() => {
   const md = props.msg.content || ''
@@ -124,6 +158,50 @@ const rendered = computed(() => {
 .msg-text :deep(pre code) {
   background: none;
   padding: 0;
+}
+/* V2.1-P2：用户消息「选中原文」引用块 —— 历史回看能定位问的是哪段内容 */
+.msg-excerpt {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 3px solid var(--el-color-primary);
+}
+.msg-excerpt-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+}
+.msg-excerpt-tag {
+  flex-shrink: 0;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+.msg-excerpt-title {
+  font-weight: 600;
+}
+.msg-excerpt-page {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.msg-excerpt-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .thinking {
   color: var(--el-text-color-secondary);

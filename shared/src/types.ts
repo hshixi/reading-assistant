@@ -14,6 +14,8 @@ export interface Book {
   mimeType: string | null
   pageCount: number | null
   sha256: string | null
+  /** 上次阅读页码（阅读进度：退出时记忆、重开自动定位；从未读过为 null） */
+  lastPage: number | null
   lastOpenedAt: string | null
   createdAt: string
   updatedAt: string
@@ -22,6 +24,8 @@ export interface Book {
 export interface BookPatch {
   title?: string
   author?: string | null
+  /** 阅读进度页：整页翻页/滚动退出时更新；null 可清除 */
+  lastPage?: number | null
 }
 
 export interface ChatSession {
@@ -43,6 +47,10 @@ export interface MessageMeta {
   model?: string
   action?: ActionType
   interrupted?: boolean
+  /** V2.1-P2：随消息发送的选中原文（右键/提及/选区上下文），用于历史回看时展示用户问的是哪段 */
+  excerptText?: string
+  /** 选中原文所在页码（可选，展示「第 N 页」） */
+  page?: number
 }
 
 export interface ChatMessage {
