@@ -12,7 +12,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import type { ChatRequest, SseMeta, SseSave } from '@reading/shared'
 import { ApiPaths } from '@reading/shared'
 import { getRepository } from '../db'
-import { Book, ChatMessage, ChatSession, Note } from '../db/entities'
+import { Book, ChatMessage, ChatSession, Highlight, Note } from '../db/entities'
 import { streamAiChunks } from '../services/chat-provider'
 import { isAbortError, streamDeepSeek, type DeepSeekInput } from '../services/deepseek'
 import { getAiSettings } from '../services/ai-settings'
@@ -217,6 +217,33 @@ export function createChatRouter(context: AppContext): Router {
             saved = { kind: 'note', id: note.id }
             sse(res, 'save', saved)
           }
+        }
+      }
+
+      // AI 高亮摘录落库：action=highlight 且模型返回 JSON 摘录时，用前端 rects 落 highlights 并广播 save
+      // V2：摘录正文优先取 body.excerptText（用户选中的原文，所见即所得）；模型 excerpt 作兜底。
+      if (!errMsg && body.action === 'highlight' && body.selection && text.trim()) {
+        const parsed = extractJsonObject(text)
+        if (parsed?.type === 'highlight') {
+          const fromUser =
+            typeof body.excerptText === 'string' && body.excerptText.trim()
+              ? body.excerptText.trim()
+              : null
+          const fromModel =
+            typeof parsed.excerpt === 'string' && parsed.excerpt.trim()
+              ? parsed.excerpt.trim()
+              : null
+          const highlight = await getRepository(Highlight).save(
+            getRepository(Highlight).create({
+              bookId: body.bookId,
+              pageNumber: body.selection.page,
+              rects: body.selection.rects,
+              color: 'yellow',
+              excerptText: fromUser ?? fromModel,
+            }),
+          )
+          saved = { kind: 'highlight', id: highlight.id }
+          sse(res, 'save', saved)
         }
       }
 

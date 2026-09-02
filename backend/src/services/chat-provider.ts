@@ -16,12 +16,43 @@ export interface AiStreamInput {
 
 const CHUNK_DELAY_MS = 24
 
-/** mock：把固定回复按 2 字切块 + 轻微延迟，模拟流式打字机 */
+/** 逐段 2 字切块 + 轻微延迟，模拟流式打字机 */
+async function* emitChunks(text: string): AsyncGenerator<string> {
+  for (let i = 0; i < text.length; i += 2) {
+    await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS))
+    yield text.slice(i, i + 2)
+  }
+}
+
+/** mock：note/highlight 落库动作需返回路由 `extractJsonObject` 能解析的 JSON 契约 */
 export async function* streamAiChunks(input: AiStreamInput): AsyncGenerator<string> {
   const actionHint = input.action ? `【快捷动作 ${input.action}】` : ''
   const selectHint = input.selection ? `【已框选第 ${input.selection.page} 页区域】` : ''
   const imageHint = input.imageDataUrl ? '【已附带截图】' : ''
   const excerpt = (input.excerptText || '').replace(/\s+/g, ' ').trim()
+
+  if (input.action === 'note') {
+    const noteJson = JSON.stringify(
+      {
+        type: 'note',
+        title: '摘抄整理',
+        content: excerpt ? `要点摘记（原文）：${excerpt.slice(0, 60)}…` : '（未附原文）',
+      },
+      null,
+      2,
+    )
+    yield* emitChunks(`\`\`\`json\n${noteJson}\n\`\`\`\n`)
+    return
+  }
+  if (input.action === 'highlight') {
+    const hlJson = JSON.stringify({
+      type: 'highlight',
+      excerpt: excerpt ? excerpt.slice(0, 80) : '（选中句）',
+    })
+    yield* emitChunks(`\`\`\`json\n${hlJson}\n\`\`\`\n`)
+    return
+  }
+
   const excerptHint = excerpt ? `【原文节选】${excerpt.slice(0, 40)}…` : ''
   const parts = [
     `已收到你的问题${imageHint}${selectHint}：${input.message}`,
@@ -29,9 +60,5 @@ export async function* streamAiChunks(input: AiStreamInput): AsyncGenerator<stri
     `（这是 M8 阶段的模拟回复，${actionHint} M9 将接入真实 DeepSeek 视觉模型。）`,
     '页面内容越具体，AI 的回答越精准；看不懂的段落可以直接框选后提问。',
   ]
-  const reply = parts.filter(Boolean).join('\n\n') + '\n'
-  for (let i = 0; i < reply.length; i += 2) {
-    await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS))
-    yield reply.slice(i, i + 2)
-  }
+  yield* emitChunks(parts.filter(Boolean).join('\n\n') + '\n')
 }
