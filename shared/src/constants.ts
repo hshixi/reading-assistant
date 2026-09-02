@@ -5,7 +5,7 @@ export type ActionType = (typeof ACTION_TYPES)[number]
 export const ACTION_LABELS: Record<ActionType, string> = {
   translate: '翻译',
   explain: '解释',
-  note: '摘抄笔记',
+  note: '笔记',
   highlight: '高亮',
 }
 

@@ -34,6 +34,13 @@
           <span class="tsm-hint">→ 聊天</span>
         </button>
         <button
+          class="tsm-item accent-note"
+          @click="choose('note')"
+        >
+          <span class="tsm-name">笔记</span>
+          <span class="tsm-hint">→ 写批注</span>
+        </button>
+        <button
           class="tsm-item accent"
           @click="choose('highlight')"
         >
@@ -49,7 +56,7 @@
 import { computed, onBeforeUnmount, onMounted } from 'vue'
 import type { TextSelectionPayload } from '@/stores/reader'
 
-export type TextAction = 'translate' | 'explain' | 'highlight'
+export type TextAction = 'translate' | 'explain' | 'note' | 'highlight'
 
 const props = defineProps<{
   visible: boolean
@@ -142,6 +149,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .tsm-item.accent:hover {
   background: var(--el-color-warning-light-9);
+}
+.tsm-item.accent-note {
+  color: var(--el-color-danger);
+}
+.tsm-item.accent-note:hover {
+  background: var(--el-color-danger-light-9);
 }
 
 .tsm-hint {

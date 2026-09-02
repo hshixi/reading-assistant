@@ -95,6 +95,7 @@
         class="reader-main"
         @contextmenu="onPdfContextMenu"
         @pointerdown="onMainPointerDown"
+        @mousemove="onMainMove"
         @click="onMainClick"
       >
         <PdfViewer
@@ -107,6 +108,8 @@
           <!-- M11：每页包裹层内渲染高亮覆盖层（slot 按页码传入，百分比定位随缩放自适应） -->
           <template #page="{ num }">
             <HighlightLayer :page="num" />
+            <!-- V2-F7：笔记原文下划线层 -->
+            <NoteMarkLayer :page="num" />
           </template>
         </PdfViewer>
         <el-empty
@@ -146,6 +149,13 @@
         :highlight-id="hlPopId"
         @close="closeHlPopover"
       />
+      <!-- V2-F7：悬停笔记下划线 → 批注浮窗（pointer-events:none，不挡阅读/拖选） -->
+      <NoteHoverTooltip
+        :visible="noteHover !== null"
+        :x="noteHover?.x ?? 0"
+        :y="noteHover?.y ?? 0"
+        :note-id="noteHover?.noteId ?? null"
+      />
 
       <aside
         v-if="showRight"
@@ -179,7 +189,11 @@
           <ChatPanel v-show="rightTab === 'chat'" />
           <NotesPanel
             v-show="rightTab === 'notes'"
+            :draft="noteDraft"
+            :focus-id="noteFocusId"
             @jump="goTo"
+            @dismiss="noteDraft = null"
+            @focused="noteFocusId = null"
           />
           <HighlightsPanel
             v-show="rightTab === 'highlights'"
@@ -201,13 +215,16 @@ import SelectionOverlay, {
   type SelectionResult,
 } from '@/components/reader/SelectionOverlay.vue'
 import HighlightLayer from '@/components/reader/HighlightLayer.vue'
+import NoteMarkLayer from '@/components/reader/NoteMarkLayer.vue'
+import NoteHoverTooltip from '@/components/reader/NoteHoverTooltip.vue'
 import TextSelectionMenu, {
   type TextAction,
 } from '@/components/reader/TextSelectionMenu.vue'
 import HighlightPopover from '@/components/reader/HighlightPopover.vue'
 import HighlightsPanel from '@/components/highlights/HighlightsPanel.vue'
 import type { TextSelectionPayload } from '@/stores/reader'
-import type { Highlight, Rect } from '@reading/shared'
+import type { Highlight, Rect, Note } from '@reading/shared'
+import type { NoteDraft } from '@/components/notes/noteDraft'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
 import NotesPanel from '@/components/notes/NotesPanel.vue'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
@@ -247,6 +264,13 @@ const hlPopY = ref(0)
 let lastDown: { x: number; y: number; t: number; hadSel: boolean } | null = null
 /** 延迟打开定时器：给双击选词留时间（新 pointerdown 即取消） */
 let pendingPopTimer: ReturnType<typeof setTimeout> | null = null
+
+/* ---- V2-F7：笔记 —— 右键写批注草稿 / 悬停浮窗 / 点击定位 ---- */
+const noteDraft = ref<NoteDraft | null>(null)
+const noteFocusId = ref<number | null>(null)
+const noteHover = ref<{ x: number; y: number; noteId: number } | null>(null)
+/** hover 命中重算节流 */
+let lastHoverAt = 0
 
 /* ---- V2-F2：可拖分隔线 ---- */
 const bodyRef = ref<HTMLElement | null>(null)
@@ -354,6 +378,12 @@ async function onMenuAction(payload: TextSelectionPayload, action: TextAction): 
     } catch (err) {
       ElMessage.error(err instanceof Error ? err.message : String(err))
     }
+  } else if (action === 'note') {
+    // V2-F7：笔记 = 记录原文 + 打开笔记面板写批注（本地，无 AI）
+    showRight.value = true
+    rightTab.value = 'notes'
+    noteDraft.value = { page: payload.page, rects: payload.rects, text: payload.text }
+    closeHlPopover()
   } else {
     // 翻译/解释复用聊天流式：右侧切到聊天并立即发送短指令 + 选中原文（原文由后端注入 AI prompt）
     if (chatStore.isStreaming) {
@@ -409,6 +439,20 @@ function onMainClick(e: MouseEvent): void {
   if (!d || Date.now() - d.t > 500) return
   if (Math.abs(e.clientX - d.x) > 4 || Math.abs(e.clientY - d.y) > 4) return
   if (d.hadSel) return // 按下时仍有选区 → 意在取消选词，不弹卡片
+
+  // V2-F7：点中笔记下划线 → 跳到笔记 Tab 并定位该条（优先于高亮小卡片）
+  const noteHit = noteAtScreenPoint(e.clientX, e.clientY)
+  if (noteHit) {
+    lastDown = null
+    cancelPendingPop()
+    closeHlPopover()
+    noteHover.value = null
+    showRight.value = true
+    rightTab.value = 'notes'
+    noteFocusId.value = noteHit.id
+    return
+  }
+
   const hit = highlightAtScreenPoint(e.clientX, e.clientY)
   if (!hit) return // 空白/普通文字：交给默认行为
   lastDown = null
@@ -422,6 +466,28 @@ function onMainClick(e: MouseEvent): void {
   }, 200)
 }
 
+/** 节流后的 mousemove：命中笔记下划线 → 显示批注浮窗（按住拖选时不打扰） */
+function onMainMove(e: MouseEvent): void {
+  if (selActive.value) return
+  if (e.buttons !== 0) {
+    if (noteHover.value) noteHover.value = null
+    return
+  }
+  const now = Date.now()
+  if (now - lastHoverAt < 30) return
+  lastHoverAt = now
+  const loc = locatePoint(e.clientX, e.clientY)
+  if (!loc) {
+    if (noteHover.value) noteHover.value = null
+    return
+  }
+  const note = notesStore.notes.find(
+    (n) => n.pageNumber === loc.page && noteRectHit(n, loc.nx, loc.ny),
+  )
+  if (note) noteHover.value = { x: e.clientX + 14, y: e.clientY + 12, noteId: note.id }
+  else if (noteHover.value) noteHover.value = null
+}
+
 /** 读行盒；对 V1 遗留单 rect 防御兜底（与 HighlightLayer 同一约定） */
 function rectsOf(h: Highlight): Rect[] {
   if (Array.isArray(h.rects)) return h.rects
@@ -429,8 +495,11 @@ function rectsOf(h: Highlight): Rect[] {
   return legacy ? [legacy] : []
 }
 
-/** 屏幕坐标 → 命中当前页某条高亮（含某一行盒）则返回之 */
-function highlightAtScreenPoint(cx: number, cy: number): Highlight | null {
+/** 屏幕坐标 → 命中所在页，并换算为该页归一化坐标（高亮/笔记命中共用） */
+function locatePoint(
+  cx: number,
+  cy: number,
+): { page: number; nx: number; ny: number } | null {
   const el = document.elementFromPoint(cx, cy) as HTMLElement | null
   const wrap = el?.closest?.('.page-wrap') as HTMLElement | null
   if (!wrap) return null
@@ -441,10 +510,35 @@ function highlightAtScreenPoint(cx: number, cy: number): Highlight | null {
   if (wr.width <= 0 || wr.height <= 0) return null
   const nx = Math.max(0, Math.min(1, (cx - wr.left) / wr.width))
   const ny = Math.max(0, Math.min(1, (cy - wr.top) / wr.height))
+  return { page, nx, ny }
+}
+
+/** 归一化点是否落在某笔记任一行盒内 */
+function noteRectHit(n: Note, nx: number, ny: number): boolean {
+  const rects = Array.isArray(n.rects) && n.rects.length ? n.rects : []
+  for (const r of rects) {
+    if (nx >= r.x && nx <= r.x + r.width && ny >= r.y && ny <= r.y + r.height) return true
+  }
+  return false
+}
+
+/** 屏幕坐标 → 命中当前页某条笔记（含某一行盒）则返回之 */
+function noteAtScreenPoint(cx: number, cy: number): Note | null {
+  const loc = locatePoint(cx, cy)
+  if (!loc) return null
+  return notesStore.notes.find((n) => n.pageNumber === loc.page && noteRectHit(n, loc.nx, loc.ny)) ?? null
+}
+
+/** 屏幕坐标 → 命中当前页某条高亮（含某一行盒）则返回之 */
+function highlightAtScreenPoint(cx: number, cy: number): Highlight | null {
+  const loc = locatePoint(cx, cy)
+  if (!loc) return null
   for (const h of readerStore.highlights) {
-    if (h.pageNumber !== page) continue
+    if (h.pageNumber !== loc.page) continue
     for (const r of rectsOf(h)) {
-      if (nx >= r.x && nx <= r.x + r.width && ny >= r.y && ny <= r.y + r.height) return h
+      if (loc.nx >= r.x && loc.nx <= r.x + r.width && loc.ny >= r.y && loc.ny <= r.y + r.height) {
+        return h
+      }
     }
   }
   return null

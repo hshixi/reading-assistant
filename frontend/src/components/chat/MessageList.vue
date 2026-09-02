@@ -24,7 +24,7 @@
       v-if="store.messages.length === 0"
       class="empty-hint"
     >
-      暂无消息。选中页面内容后点「翻译 / 解释 / 摘抄 / 高亮」，或直接输入提问。
+      暂无消息。选中原文右键「翻译 / 解释 / 笔记 / 高亮」，或直接输入提问。
     </div>
 
     <MessageItem

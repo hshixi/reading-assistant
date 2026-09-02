@@ -1,6 +1,7 @@
 <template>
   <div
     class="note-item"
+    :data-note-id="note.id"
     @click="onJump"
   >
     <div class="note-head">
@@ -23,8 +24,19 @@
         删除
       </el-button>
     </div>
-    <div class="note-content">
-      {{ note.content }}
+    <!-- V2-F7：原文摘录（引文样式）置顶 -->
+    <div
+      v-if="excerpt"
+      class="note-excerpt"
+      :title="excerpt"
+    >
+      {{ excerpt }}
+    </div>
+    <div
+      class="note-content"
+      :class="{ empty: !content }"
+    >
+      {{ content || '（无批注）' }}
     </div>
   </div>
 </template>
@@ -42,6 +54,12 @@ const timeText = computed(() => {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 })
+
+/** 归一化显示原文：折叠空白便于展示 */
+const excerpt = computed(() => (props.note.excerptText ?? '').trim())
+
+/** 批注正文 */
+const content = computed(() => (props.note.content ?? '').trim())
 
 function onJump(): void {
   if (props.note.pageNumber != null) emit('jump', props.note.pageNumber)
@@ -68,11 +86,23 @@ async function onDelete(): Promise<void> {
   border-radius: 8px;
   background: var(--el-bg-color);
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.2s;
 }
 .note-item:hover {
   border-color: var(--el-color-primary);
 }
+/* V2-F7：定位到该条时 1.5s 淡入淡出的闪烁（ReaderView/NotesPanel 触发后加类再移除） */
+.note-item.flash {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 30%, transparent);
+  background: var(--el-color-primary-light-9);
+  animation: note-flash 1.5s ease-out 1;
+}
+@keyframes note-flash {
+  0% { background: var(--el-color-primary-light-5); }
+  100% { background: var(--el-color-primary-light-9); }
+}
+
 .note-head {
   display: flex;
   align-items: center;
@@ -97,11 +127,31 @@ async function onDelete(): Promise<void> {
 .note-delete {
   margin-left: auto;
 }
+/* V2-F7：原文摘录引文样式（灰底 + 左竖线），同笔记的批注分开展示 */
+.note-excerpt {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border-left: 3px solid var(--el-color-warning);
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .note-content {
   font-size: 13px;
   line-height: 1.6;
   color: var(--el-text-color-primary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+.note-content.empty {
+  color: var(--el-text-color-placeholder);
 }
 </style>
