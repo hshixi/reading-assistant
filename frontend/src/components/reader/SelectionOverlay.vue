@@ -1,6 +1,7 @@
 <template>
   <div
     v-if="active"
+    ref="overlayRef"
     class="selection-overlay"
     @mousedown="onDown"
     @mousemove="onMove"
@@ -46,22 +47,49 @@ interface Rect {
   h: number
 }
 
+const overlayRef = ref<HTMLElement | null>(null)
 const start = ref<{ x: number; y: number } | null>(null)
+/** 选区坐标。语义：**视口坐标**（captureSelection 按视口坐标对 canvas rect 求交，勿改） */
 const rect = ref<Rect | null>(null)
+/** overlay 相对视口原点的偏移（视觉矩形 = 视口坐标 - 此偏移） */
+const origin = ref<{ left: number; top: number }>({ left: 0, top: 0 })
+/** 起始点所在页（overlay 本地坐标），用于把拖拽视觉夹取在该页内 */
+const pageBox = ref<Rect | null>(null)
 
+/** overlay 本地坐标的视觉矩形（B2 修复：不能再把 clientX/Y 直接当本地坐标） */
 const rectStyle = computed(() => {
   const r = rect.value
   if (!r) return {}
   return {
-    left: `${r.x}px`,
-    top: `${r.y}px`,
+    left: `${r.x - origin.value.left}px`,
+    top: `${r.y - origin.value.top}px`,
     width: `${r.w}px`,
     height: `${r.h}px`,
   }
 })
 
+/** 求某视口坐标点命中的页面区域（相对 overlay 的本地坐标）；无命中返回 null */
+function pageBoxAt(x: number, y: number): Rect | null {
+  const canvases = document.querySelectorAll<HTMLCanvasElement>('.pdf-canvas')
+  for (const c of canvases) {
+    const cr = c.getBoundingClientRect()
+    if (x >= cr.left && x <= cr.right && y >= cr.top && y <= cr.bottom) {
+      return {
+        x: cr.left - origin.value.left,
+        y: cr.top - origin.value.top,
+        w: cr.width,
+        h: cr.height,
+      }
+    }
+  }
+  return null
+}
+
 function onDown(e: MouseEvent): void {
   if (e.button !== 0) return
+  const ov = overlayRef.value?.getBoundingClientRect()
+  origin.value = ov ? { left: ov.left, top: ov.top } : { left: 0, top: 0 }
+  pageBox.value = pageBoxAt(e.clientX, e.clientY)
   start.value = { x: e.clientX, y: e.clientY }
   rect.value = { x: e.clientX, y: e.clientY, w: 0, h: 0 }
   window.addEventListener('mouseup', onUp)
@@ -70,12 +98,24 @@ function onDown(e: MouseEvent): void {
 
 function onMove(e: MouseEvent): void {
   if (!start.value || !rect.value) return
-  rect.value = {
-    x: Math.min(start.value.x, e.clientX),
-    y: Math.min(start.value.y, e.clientY),
-    w: Math.abs(e.clientX - start.value.x),
-    h: Math.abs(e.clientY - start.value.y),
+  // 原始拖拽矩形（视口坐标）
+  const vx = Math.min(start.value.x, e.clientX)
+  const vy = Math.min(start.value.y, e.clientY)
+  const vw = Math.abs(e.clientX - start.value.x)
+  const vh = Math.abs(e.clientY - start.value.y)
+  // 视觉夹取到起始页内（视口坐标表示），避免跨页/出页虚影
+  const pb = pageBox.value
+  if (pb) {
+    const L = Math.max(vx, pb.x + origin.value.left)
+    const T = Math.max(vy, pb.y + origin.value.top)
+    const R = Math.min(vx + vw, pb.x + pb.w + origin.value.left)
+    const B = Math.min(vy + vh, pb.y + pb.h + origin.value.top)
+    if (R > L && B > T) {
+      rect.value = { x: L, y: T, w: R - L, h: B - T }
+      return
+    }
   }
+  rect.value = { x: vx, y: vy, w: vw, h: vh }
 }
 
 function onUp(): void {
@@ -84,6 +124,7 @@ function onUp(): void {
   const r = rect.value
   start.value = null
   rect.value = null
+  pageBox.value = null
   if (r.w < 4 || r.h < 4) return
   const sel = captureSelection(r)
   if (sel) emit('selection', sel)

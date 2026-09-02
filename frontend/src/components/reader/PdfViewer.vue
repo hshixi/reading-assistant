@@ -40,8 +40,11 @@
         class="page-item"
         :style="{ top: `${p.top}px` }"
       >
-        <!-- .page-wrap 与 canvas 同尺寸（相对定位），供高亮/注释等覆盖层按百分比对齐 -->
-        <div class="page-wrap">
+        <!-- .page-wrap 依当前缩放显式定尺寸（高亮/注释等覆盖层按百分比对齐，且 canvas 未就绪时页面框已占位） -->
+        <div
+          class="page-wrap"
+          :style="wrapStyle(p.num)"
+        >
           <canvas
             :ref="setCanvas(p.num)"
             :data-page="p.num"
@@ -103,6 +106,48 @@ const GAP = 16
 const PAD_TOP = 16
 const PAD_BOTTOM = 24
 
+/**
+ * B1：可见窗口半径。比 V1 的 ±2 放宽到 ±4，让「刚从窗口底部进入」的新页
+ * 有足够的异步渲染提前量，进入视口时通常已就绪，消除滚动闪白。
+ */
+const RENDER_MARGIN = 4
+
+/**
+ * B1：已渲染页面内容的离屏快照缓存（num + scale + dpr 为键）。
+ * 页面滚出 DOM 窗口时 canvas 被卸载，但内容以快照保留；同缩放回看时
+ * 直接整帧 blit 复用，跳过整次异步渲染 → 滚动上下往返不再闪白。
+ */
+const snapCache = new Map<string, HTMLCanvasElement>()
+const SNAP_CAP = 40
+
+function snapKey(num: number, scale: number, dpr: number): string {
+  return `${num}@${Math.round(scale * 100)}@${dpr}`
+}
+
+function cacheSnap(key: string, canvas: HTMLCanvasElement): void {
+  snapCache.set(key, canvas)
+  if (snapCache.size > SNAP_CAP) {
+    const oldest = snapCache.keys().next().value
+    if (oldest !== undefined) snapCache.delete(oldest)
+  }
+}
+
+function clearSnaps(): void {
+  snapCache.clear()
+}
+
+/**
+ * 把已渲染的离屏帧整帧写进目标 canvas（先定 bitmap 尺寸后一次性 drawImage，
+ * 无中间空白帧）。canvas 的 CSS 尺寸由 .pdf-canvas 的 width/height:100% 跟随
+ * .page-wrap（wrap 已按当前缩放定尺寸），因此这里只需设 bitmap 缓冲。
+ */
+function blitInto(target: HTMLCanvasElement, src: HTMLCanvasElement): void {
+  if (target.width !== src.width) target.width = src.width
+  if (target.height !== src.height) target.height = src.height
+  const ctx = target.getContext('2d')
+  ctx?.drawImage(src, 0, 0)
+}
+
 interface PageSize {
   w: number
   h: number
@@ -153,6 +198,16 @@ function computeOffsets(): void {
   totalHeight.value = Math.max(0, y - GAP + PAD_BOTTOM)
 }
 
+/** 单页 .page-wrap 尺寸（px，依当前缩放）；canvas 以 100% 填充，覆盖层按百分比对齐 */
+function wrapStyle(num: number): Record<string, string> {
+  const s = sizes[num - 1]
+  if (!s) return {}
+  return {
+    width: `${Math.round(s.w * scale.value)}px`,
+    height: `${Math.round(s.h * scale.value)}px`,
+  }
+}
+
 /** 依滚动位置计算可见范围（±2 页）并重建 visiblePages */
 function updateVisible(): void {
   const el = containerRef.value
@@ -164,8 +219,8 @@ function updateVisible(): void {
   const vh = el.clientHeight
   const first = pageIndexAt(st)
   const last = pageIndexAt(st + vh)
-  const start = Math.max(0, (first < 0 ? 0 : first) - 2)
-  const end = Math.min(pageCount.value - 1, Math.max(first, last) + 2)
+  const start = Math.max(0, (first < 0 ? 0 : first) - RENDER_MARGIN)
+  const end = Math.min(pageCount.value - 1, Math.max(first, last) + RENDER_MARGIN)
   const pages: { num: number; top: number }[] = []
   for (let i = start; i <= end; i++) {
     pages.push({ num: i + 1, top: offsets[i] })
@@ -189,22 +244,33 @@ function cancelAllTasks(): void {
   renderTasks.clear()
 }
 
-/** 渲染单页到 canvas（Retina 由 transform 处理），非显渲染由 nonce 作废 */
+/**
+ * 渲染单页到 canvas（Retina 由 transform 处理），非显渲染由 nonce 作废。
+ * B1：离屏渲染到 tmp，完成后一次性 blit 上屏 + 存快照。
+ *  - 命中同缩放快照 → 直接整帧复用（回看/往返滚动不再闪白）
+ *  - 渲染期间不动目标 canvas（保留旧帧），完成后才定尺寸+drawImage → 无空白中间帧
+ */
 async function renderPageCanvas(num: number, canvas: HTMLCanvasElement, nonce: number): Promise<void> {
   const doc = pdfDoc.value
   if (!doc) return
   try {
     const page = await doc.getPage(num)
     if (nonce !== layoutNonce) return
-    const vp = page.getViewport({ scale: scale.value })
     const dpr = window.devicePixelRatio || 1
-    canvas.width = Math.floor(vp.width * dpr)
-    canvas.height = Math.floor(vp.height * dpr)
-    canvas.style.width = `${Math.floor(vp.width)}px`
-    canvas.style.height = `${Math.floor(vp.height)}px`
+    const key = snapKey(num, scale.value, dpr)
+    const snap = snapCache.get(key)
+    if (snap) {
+      blitInto(canvas, snap)
+      return
+    }
+    const vp = page.getViewport({ scale: scale.value })
+    if (nonce !== layoutNonce) return
+    const tmp = document.createElement('canvas')
+    tmp.width = Math.floor(vp.width * dpr)
+    tmp.height = Math.floor(vp.height * dpr)
     if (nonce !== layoutNonce) return
     const task = page.render({
-      canvas,
+      canvas: tmp,
       viewport: vp,
       transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined,
     })
@@ -212,10 +278,13 @@ async function renderPageCanvas(num: number, canvas: HTMLCanvasElement, nonce: n
     try {
       await task.promise
     } catch {
-      /* cancelled */
+      return // cancelled：丢弃离屏帧
     } finally {
       renderTasks.delete(num)
     }
+    if (nonce !== layoutNonce) return
+    cacheSnap(key, tmp)
+    blitInto(canvas, tmp)
   } catch (err) {
     if (nonce === layoutNonce) console.error(`[pdf] 第 ${num} 页渲染失败:`, err)
   }
@@ -334,6 +403,7 @@ async function prevPage(): Promise<void> {
 async function loadDoc(): Promise<void> {
   loading.value = true
   error.value = ''
+  clearSnaps()
   layoutNonce++
   pageNumber.value = 1
   pageCount.value = 0
@@ -364,6 +434,7 @@ async function loadDoc(): Promise<void> {
 function destroy(): void {
   layoutNonce++
   cancelAllTasks()
+  clearSnaps()
   void pdfDoc.value?.destroy()
   pdfDoc.value = null
 }
@@ -423,7 +494,10 @@ defineExpose({ pageNumber, pageCount, scale, goToPage, nextPage, prevPage, fitWi
 }
 
 .pdf-canvas {
-  display: block;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   background: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }
