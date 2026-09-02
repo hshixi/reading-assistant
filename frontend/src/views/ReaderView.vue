@@ -72,14 +72,6 @@
 
       <el-button
         size="small"
-        :type="selActive ? 'primary' : 'default'"
-        @click="selActive = !selActive"
-      >
-        {{ selActive ? '取消框选' : '框选' }}
-      </el-button>
-
-      <el-button
-        size="small"
         @click="toggleRight"
       >
         {{ showRight ? '收起侧栏' : '侧栏' }}
@@ -95,6 +87,7 @@
         class="reader-main"
         @contextmenu="onPdfContextMenu"
         @pointerdown="onMainPointerDown"
+        @pointerup="onMainPointerUp"
         @mousemove="onMainMove"
         @click="onMainClick"
       >
@@ -118,9 +111,9 @@
         />
         <SelectionOverlay
           v-if="src && !loadError"
-          :active="selActive"
+          :active="readerStore.selecting"
           @selection="onSelection"
-          @cancel="selActive = false"
+          @cancel="readerStore.cancelSelect"
         />
       </main>
 
@@ -249,7 +242,6 @@ const pageCount = ref(0)
 const src = ref('')
 const loading = ref(false)
 const loadError = ref('')
-const selActive = ref(false)
 const showRight = ref(true)
 const rightTab = ref<'chat' | 'notes' | 'highlights'>('chat')
 
@@ -322,7 +314,7 @@ function onSelection(sel: SelectionResult): void {
     rect: sel.rect,
     imageDataUrl: sel.imageDataUrl,
   })
-  selActive.value = false
+  readerStore.cancelSelect()
   ElMessage.success(`已框选第 ${sel.page} 页区域，可发送给 AI`)
   // 测试/调试钩子：harness 通过 window.__readerSelection 读取断言
   ;(window as unknown as Record<string, unknown>).__readerSelection = sel
@@ -337,7 +329,7 @@ function onPageCount(count: number): void {
 
 function onPdfContextMenu(e: MouseEvent): void {
   // 框选截图模式下不弹文本菜单（交给框选交互处理）
-  if (selActive.value) return
+  if (readerStore.selecting) return
   const hit = e.target as HTMLElement | null
   if (!hit || !hit.closest('.page-wrap')) return // 页面外不拦截（如边距空白）
   // 没有活跃的文本选区则不拦截：让系统默认行为（本 app 无默认菜单，等于无事发生）
@@ -399,6 +391,8 @@ async function onMenuAction(payload: TextSelectionPayload, action: TextAction): 
       excerptText: payload.text,
     })
   }
+  // 原文已被某动作消费（翻译/解释进聊天、笔记/高亮落库）→ 清掉待发送的文本选区
+  if (readerStore.selection?.kind === 'text') readerStore.clearSelection()
   clearNativeSelection()
 }
 
@@ -432,8 +426,20 @@ function onMainPointerDown(e: PointerEvent): void {
   }
 }
 
+/** V2-F4：拖选结束（松开鼠标）时若有原生文本选区 → 捕获为待发送原文。
+ *  这样用户不经过右键菜单也能在聊天输入区看到「原文 chip」，
+ *  可键入问题把它作为上下文发给 AI（N9 的提及动作也依赖它）。 */
+function onMainPointerUp(e: PointerEvent): void {
+  if (readerStore.selecting) return // 截图框选由 SelectionOverlay 处理
+  const hit = e.target as HTMLElement | null
+  if (!hit?.closest?.('.page-wrap')) return // 只在页内文字上拖选结束才捕获
+  const selObj = window.getSelection()
+  if (!selObj || selObj.isCollapsed || selObj.rangeCount === 0) return
+  readerStore.captureTextSelection()
+}
+
 function onMainClick(e: MouseEvent): void {
-  if (selActive.value) return // 截图框选模式不处理
+  if (readerStore.selecting) return // 截图框选模式不处理
   const d = lastDown
   // 必须是紧跟在 main 内 pointerdown 的点击（此前被 popover 遮罩吞掉的 click 不会带最近 down）
   if (!d || Date.now() - d.t > 500) return
@@ -468,7 +474,7 @@ function onMainClick(e: MouseEvent): void {
 
 /** 节流后的 mousemove：命中笔记下划线 → 显示批注浮窗（按住拖选时不打扰） */
 function onMainMove(e: MouseEvent): void {
-  if (selActive.value) return
+  if (readerStore.selecting) return
   if (e.buttons !== 0) {
     if (noteHover.value) noteHover.value = null
     return

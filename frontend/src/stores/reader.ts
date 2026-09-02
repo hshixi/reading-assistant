@@ -71,6 +71,8 @@ export const useReaderStore = defineStore('reader', {
     crossPageSelection: false,
     /** 当前书的高亮（HighlightLayer 按 page 分组渲染，百分比定位随缩放自适应） */
     highlights: [] as Highlight[],
+    /** V2-F3：截图框选模式（入口在聊天输入区小图标；ReaderView 据此渲染 SelectionOverlay） */
+    selecting: false,
   }),
   actions: {
     setBook(book: Book): void {
@@ -81,6 +83,7 @@ export const useReaderStore = defineStore('reader', {
       this.selection = null
       this.crossPageSelection = false
       this.highlights = []
+      this.selecting = false
     },
 
     async loadHighlights(): Promise<void> {
@@ -110,6 +113,15 @@ export const useReaderStore = defineStore('reader', {
     },
     clearSelection(): void {
       this.selection = null
+    },
+
+    /** V2-F3：进入截图框选模式（清掉旧选区，框选一张新的） */
+    beginSelect(): void {
+      this.selecting = true
+      this.selection = null
+    },
+    cancelSelect(): void {
+      this.selecting = false
     },
 
     /**
