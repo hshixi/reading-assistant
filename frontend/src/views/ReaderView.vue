@@ -55,18 +55,14 @@
         <el-button-group>
           <el-button
             size="small"
+            title="缩小"
             @click="viewerRef?.zoom(-0.1)"
           >
             -
           </el-button>
           <el-button
             size="small"
-            @click="viewerRef?.fitWidth()"
-          >
-            适配宽度
-          </el-button>
-          <el-button
-            size="small"
+            title="放大"
             @click="viewerRef?.zoom(0.1)"
           >
             +
@@ -84,13 +80,16 @@
 
       <el-button
         size="small"
-        @click="showRight = !showRight"
+        @click="toggleRight"
       >
         {{ showRight ? '收起侧栏' : '侧栏' }}
       </el-button>
     </div>
 
-    <div class="reader-body">
+    <div
+      ref="bodyRef"
+      class="reader-body"
+    >
       <main
         v-loading="loading"
         class="reader-main"
@@ -119,9 +118,19 @@
         />
       </main>
 
+      <!-- V2-F2：PDF 区与聊天区的可拖分隔线 -->
+      <div
+        v-if="showRight"
+        class="reader-splitter"
+        :class="{ dragging: splitDragging }"
+        title="拖拽调整面板宽度"
+        @mousedown="startSplitDrag"
+      />
+
       <aside
         v-if="showRight"
         class="reader-chat"
+        :style="{ width: `${layout.readerChatWidth}px` }"
       >
         <div class="right-tabs">
           <button
@@ -152,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -169,11 +178,13 @@ import { bookFileUrl } from '@/api/client'
 import { useReaderStore } from '@/stores/reader'
 import { useChatStore } from '@/stores/chat'
 import { useNotesStore } from '@/stores/notes'
+import { useLayoutStore } from '@/stores/layout'
 
 const route = useRoute()
 const readerStore = useReaderStore()
 const chatStore = useChatStore()
 const notesStore = useNotesStore()
+const layout = useLayoutStore()
 
 const bookId = computed(() => Number(route.params.bookId))
 const viewerRef = ref<InstanceType<typeof PdfViewer> | null>(null)
@@ -186,6 +197,48 @@ const loadError = ref('')
 const selActive = ref(false)
 const showRight = ref(true)
 const rightTab = ref<'chat' | 'notes'>('chat')
+
+/* ---- V2-F2：可拖分隔线 ---- */
+const bodyRef = ref<HTMLElement | null>(null)
+const splitDragging = ref(false)
+
+function startSplitDrag(e: MouseEvent): void {
+  if (e.button !== 0) return
+  e.preventDefault()
+  splitDragging.value = true
+  document.body.classList.add('resizing-cols')
+  window.addEventListener('mousemove', onSplitMove)
+  window.addEventListener('mouseup', endSplitDrag)
+}
+
+function onSplitMove(e: MouseEvent): void {
+  if (!splitDragging.value || !bodyRef.value) return
+  // 聊天面板右侧贴 body 右缘：宽度 = body 右缘 - 光标 x
+  const body = bodyRef.value.getBoundingClientRect()
+  layout.setReaderChatWidth(body.right - e.clientX)
+}
+
+function endSplitDrag(): void {
+  if (!splitDragging.value) return
+  splitDragging.value = false
+  document.body.classList.remove('resizing-cols')
+  window.removeEventListener('mousemove', onSplitMove)
+  window.removeEventListener('mouseup', endSplitDrag)
+  // 面板宽度变化 → PDF 区重新适配宽度
+  void refitViewer()
+}
+
+/** 侧栏收起/展开后，PDF 区宽度变化 → 重新适配 */
+function toggleRight(): void {
+  showRight.value = !showRight.value
+  void refitViewer()
+}
+
+/** 等 DOM 稳定后让 PdfViewer 适配当前宽度 */
+async function refitViewer(): Promise<void> {
+  await nextTick()
+  if (viewerRef.value) await viewerRef.value.fitWidth()
+}
 
 /** 框选完成：存入 store 供聊天发送时读取，并退出截图模式 */
 function onSelection(sel: SelectionResult): void {
@@ -228,6 +281,12 @@ async function loadBook(): Promise<void> {
 
 watch(bookId, loadBook)
 onMounted(loadBook)
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onSplitMove)
+  window.removeEventListener('mouseup', endSplitDrag)
+  document.body.classList.remove('resizing-cols')
+})
 </script>
 
 <style scoped>
@@ -303,8 +362,22 @@ onMounted(loadBook)
   min-width: 0;
 }
 
+.reader-splitter {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--el-border-color-lighter);
+  transition: background-color 0.15s;
+}
+.reader-splitter:hover {
+  background: var(--el-color-primary-light-5);
+}
+.reader-splitter.dragging {
+  background: var(--el-color-primary);
+}
+
 .reader-chat {
-  width: 380px;
+  width: 380px; /* store 默认值；实际宽度由 inline style 覆盖 */
   flex-shrink: 0;
   border-left: 1px solid var(--el-border-color-light);
   min-height: 0;
@@ -358,5 +431,10 @@ onMounted(loadBook)
 .right-body > * {
   flex: 1;
   min-height: 0;
+}
+
+:global(body.resizing-cols) {
+  cursor: col-resize;
+  user-select: none;
 }
 </style>
