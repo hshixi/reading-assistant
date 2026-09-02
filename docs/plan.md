@@ -20,6 +20,29 @@
 | M14 | dmg+降级验证 | electron-builder dmg、MySQL→SQLite 自动退回 | dmg 构建 + 打包后应用开箱即用；无 MySQL 自动降级 SQLite；退出无孤儿进程 | ✅ 2026-09-01 |
 | M15 | QA/收尾 | 空态/错误处理/README/lint/图标/冒烟清单 | 冒烟测试清单全绿 | ✅ 2026-09-01 | |
 
+## V2 模块日志（F1–F7 / B1–B3，基线 `git tag v1.0.0` = 1624b8a）
+
+V2 规划与逐模块根因见 `.claude/plans/mac-app-dmg-app-1-pdf-2-ai-ai-highlight-federated-hammock.md`；
+每个模块一个 `feat/v2-*` 分支，验收（lint + typecheck + CDP/手测）后 squash 合并到 `main`。
+
+| # | 模块 | 交付物 | 验收标准 | 状态 |
+|---|---|---|---|---|
+| N1 | 主题系统（F1） | theme.ts + EP dark css-vars + ThemeToggle + 硬编码色变量化（`d689a90`） | 默认暗色；切浅色即时全局生效；重启记忆 | ✅ 2026-09-02 |
+| N2 | 渲染/选区修复（B1+B2） | PdfViewer 双缓冲 blit + LRU 内容缓存 + 预渲染窗口；SelectionOverlay overlay 本地坐标（`e384c8c`） | 快速滚动/跳转/缩放无白闪；框选首行蓝框与首行对齐 | ✅ 2026-09-02 |
+| N3 | 可拖分隔线（F2） | stores/layout.ts + .reader-splitter；移除「适配宽度」按钮（`ce90887`） | 拖拽顺畅、宽度记忆；PDF 区缩放 re-fit 不越界 | ✅ 2026-09-02 |
+| N4 | 数据模型 v2 | Highlight/Note rect→rects[]、excerptText、Selection 几何语义；marks DTO 归一化（`7759f5d`） | lint/typecheck 全绿；旧数据读归一化不崩；高亮/笔记 CRUD 通 | ✅ 2026-09-02 |
+| N5 | 文本层+右键菜单（F6） | PdfViewer 每页 TextLayer；TextSelectionMenu（翻译/解释/笔记/高亮）；captureTextSelection 行盒化（`5ef8507`） | 原生拖选可见；右键动作走聊天流式/面板；跨页提示 | ✅ 2026-09-02 |
+| N6 | 高亮重做+高亮 Tab（F5） | HighlightLayer 多行盒渲染 + 点选卡片；右键「高亮」直建本地高亮；HighlightsPanel（`f15afb1`） | 多行选中全部标黄；删除即时消失；缩放仍贴合 | ✅ 2026-09-02 |
+| N7 | 笔记重做（F7） | NoteItem 重排+excerpt；右键「笔记」预填批注编辑态；下划线+hover 浮窗+点击定位；文案「摘抄」→「笔记」（`2ab716e`） | 右键→Tab 预填原文→写批注保存→下划线→hover→点击定位 | ✅ 2026-09-02 |
+| N8 | 聊天输入重构（F3/F4） | ChatInput 删 quick-actions 行；相机框选 icon；文本/截图 chip；发送即清 selection（`ba4a828`） | 框选→chip→发送→自动清除；附带开关生效 | ✅ 2026-09-02 |
+| N9 | 提及动作+后端落库（B3） | chat.ts highlight 落库分支；deepseek 文本摘录注入；ChatInput 词表→action + 无选区提示（`bdafc7c`） | 「翻译这段」流式；「整理成笔记」落笔记含原文；「高亮这句」落高亮；无选区提及→警告 | ✅ 2026-09-02 |
+| N10 | 回归联调 QA | 全量 lint/typecheck；dev:prod 手测（B1/B2/主题/截图/右键/提及）；smoke-test.md 补 V2 条目；本日志 V2 行 | 冒烟 V2 清单全绿；回归测试数据清理；无孤儿进程 | ✅ 2026-09-02 |
+
+**N10 实测结论**：`npm run lint` + `npm run typecheck` 全绿；SQLite 降级 dev:prod 下 B1 复测
+（快速滚动 48→53 页逐帧可见页 canvas 均已渲染、无空白闪烁）、B2 复测（框选蓝框与鼠标起点对齐、
+无 88px 偏移）、主题切换、右键高亮落库/删除、右键翻译流式、框选截图发送即清、提及动作落库，
+均已 CDP 端到端/手测通过；回归产生的会话/消息/笔记/高亮测试数据已清理（notes/highlights/sessions=0）。
+
 ## 分支纪律
 
 - `main` 为保护分支，仅接受 `feat/*` 的 squash merge。
