@@ -35,10 +35,27 @@ reading_assistant/
 
 ```bash
 npm install          # 安装所有 workspace 依赖
-npm run dev          # 并发启动 vite + backend + electron
+npm run dev          # 并发启动 vite + backend + electron（HMR 热更新）
+npm run dev:prod     # 源码级生产模式：后端 bundle + file:// + CSP + 完整日志
 ```
 
 > 后端环境变量见 `backend/.env.example`。开发默认 `DATABASE_DRIVER=sqlite` 无需安装 MySQL；改用 MySQL 需先启动本地 MySQL 并设置 `DATABASE_DRIVER=mysql` 及相关连接参数。
+
+### `npm run dev:prod`（体验生产路径，无需打 dmg）
+
+与打包后的 dmg 行为一致（真实 node 后端子进程、动态端口握手、file:// 加载、CSP），
+但启动只要 ~10 秒，且输出完整日志（后端降级、端口、渲染层 console）。适合发布前
+自己传 PDF 走完整流程。
+
+```bash
+npm run dev:prod                  # 构建 + 启动
+npm run dev:prod -- --no-build    # 已构建过时跳过重新构建
+npm run dev:prod -- --debug-port=9223   # 附带 CDP 调试端口
+```
+
+- 数据目录默认 `~/Library/Application Support/Reading Assistant (dev)`（与打包应用隔离，
+  但跨多次运行保留上传的书籍/会话）；可用 `READING_APP_USER_DATA=/path` 覆盖。
+- `Ctrl+C` 退出，后端随主进程清理，无孤儿进程。
 
 ## 打包发布（dmg）
 

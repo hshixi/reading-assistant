@@ -18,7 +18,8 @@
     "build:electron": "npm run build -w @reading/electron",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
-    "dev": "node scripts/dev.mjs"
+    "dev": "node scripts/dev.mjs",
+    "dev:prod": "node scripts/dev-prod.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
