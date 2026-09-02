@@ -65,7 +65,7 @@ function rectsOf(h: Highlight): Rect[] {
   position: absolute;
   opacity: 0.35;
   border-radius: 2px;
-  cursor: pointer;
-  pointer-events: auto;
+  /* N5：不拦截指针，保证原生文本选择可穿过高亮 */
+  pointer-events: none;
 }
 </style>

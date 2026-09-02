@@ -50,9 +50,15 @@
             :data-page="p.num"
             class="pdf-canvas"
           />
+          <!-- V2-F6：原生文本选择层。canvas < 高亮(slot) < 文本层，保证文本可选中 -->
           <slot
             name="page"
             :num="p.num"
+          />
+          <div
+            :ref="setTextContainer(p.num)"
+            class="textLayer"
+            :data-page-text="p.num"
           />
         </div>
       </div>
@@ -63,6 +69,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
+import type { TextContent } from 'pdfjs-dist/types/src/display/api'
 // ?url 让 Vite 原样拷贝 worker 文件（不经 esbuild 重打包，否则 pdf.js 私有字段被破坏）
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
@@ -303,6 +310,82 @@ async function syncVisibleCanvases(): Promise<void> {
   }
 }
 
+/* ---------- V2-F6：文本层（原生选区） ----------
+ * 每可见页 .page-wrap 内挂透明 span，支持原生拖选文本。
+ * pdf.js TextLayer 依赖宿主在容器上设 --total-scale-factor（= 当前 CSS 缩放），
+ * 缩放变化时按页重建（TextContent 已缓存，重建轻量）。
+ */
+
+const textContainers = new Map<number, HTMLDivElement>()
+const textLayers = new Map<number, pdfjsLib.TextLayer>()
+/** 每页文本内容缓存（跨缩放复用，避免重复走 worker 提取） */
+const textContents = new Map<number, TextContent>()
+/** 每页已渲染的缩放值（避免同缩放重复 render） */
+const renderedTextScale = new Map<number, number>()
+
+function setTextContainer(num: number): (el: unknown) => void {
+  return (el: unknown) => {
+    if (el instanceof HTMLDivElement) textContainers.set(num, el)
+    else textContainers.delete(num)
+  }
+}
+
+async function renderPageText(num: number, nonce: number): Promise<void> {
+  const doc = pdfDoc.value
+  const container = textContainers.get(num)
+  if (!doc || !container) return
+  if (renderedTextScale.get(num) === scale.value) return
+  const prev = textLayers.get(num)
+  if (prev) {
+    prev.cancel()
+    textLayers.delete(num)
+  }
+  try {
+    const page = await doc.getPage(num)
+    if (nonce !== layoutNonce) return
+    const viewport = page.getViewport({ scale: scale.value })
+    let tc = textContents.get(num)
+    if (!tc) {
+      tc = await page.getTextContent()
+      if (nonce !== layoutNonce) return
+      textContents.set(num, tc)
+    }
+    if (nonce !== layoutNonce) return
+    // pdf.js 依据这些 CSS 变量计算容器尺寸与字号
+    container.replaceChildren()
+    container.style.setProperty('--total-scale-factor', String(scale.value))
+    container.style.setProperty('--scale-round-x', '1px')
+    container.style.setProperty('--scale-round-y', '1px')
+    const tl = new pdfjsLib.TextLayer({ textContentSource: tc, container, viewport })
+    textLayers.set(num, tl)
+    renderedTextScale.set(num, scale.value)
+    await tl.render()
+    if (nonce !== layoutNonce) textLayers.delete(num)
+  } catch (err) {
+    renderedTextScale.delete(num)
+    if (nonce === layoutNonce) console.warn(`[pdf] 第 ${num} 页文本层失败:`, err)
+  }
+}
+
+/** Vue patch 后为所有已挂载可见页补齐文本层（未以当前缩放渲染的才渲染） */
+async function syncTextLayers(): Promise<void> {
+  const nonce = layoutNonce
+  await nextTick()
+  if (nonce !== layoutNonce) return
+  for (const p of visiblePages.value) {
+    if (textContainers.has(p.num)) void renderPageText(p.num, nonce)
+  }
+}
+
+/** 清空全部文本层（切文档/销毁） */
+function clearTextLayers(): void {
+  for (const tl of textLayers.values()) tl.cancel()
+  textLayers.clear()
+  textContainers.clear()
+  textContents.clear()
+  renderedTextScale.clear()
+}
+
 /** 依视口中心更新「当前页」并 emit（工具栏/书签联动） */
 function updateCurrentPage(): void {
   const el = containerRef.value
@@ -321,6 +404,7 @@ function onScroll(): void {
     scrollRaf = 0
     updateVisible()
     void syncVisibleCanvases()
+    void syncTextLayers()
     updateCurrentPage()
   })
 }
@@ -352,6 +436,7 @@ async function applyScale(newScale: number): Promise<void> {
   cancelAllTasks()
   updateVisible()
   await syncVisibleCanvases()
+  void syncTextLayers()
   if (el && anchorIdx >= 0) {
     el.scrollTop = Math.max(0, offsets[anchorIdx] ?? 0)
     updateVisible()
@@ -388,6 +473,7 @@ async function goToPage(n: number): Promise<void> {
   emit('page-number', target)
   updateVisible()
   await syncVisibleCanvases()
+  void syncTextLayers()
 }
 
 async function nextPage(): Promise<void> {
@@ -404,6 +490,7 @@ async function loadDoc(): Promise<void> {
   loading.value = true
   error.value = ''
   clearSnaps()
+  clearTextLayers()
   layoutNonce++
   pageNumber.value = 1
   pageCount.value = 0
@@ -422,6 +509,7 @@ async function loadDoc(): Promise<void> {
     await fitWidth()
     updateVisible()
     await syncVisibleCanvases()
+    void syncTextLayers()
     updateCurrentPage()
   } catch (err) {
     console.error('[pdf] 加载失败:', err)
@@ -435,6 +523,7 @@ function destroy(): void {
   layoutNonce++
   cancelAllTasks()
   clearSnaps()
+  clearTextLayers()
   void pdfDoc.value?.destroy()
   pdfDoc.value = null
 }
@@ -500,5 +589,64 @@ defineExpose({ pageNumber, pageCount, scale, goToPage, nextPage, prevPage, fitWi
   height: 100%;
   background: #fff;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+</style>
+
+<!-- V2-F6：pdf.js TextLayer 所需最小样式（非 scoped，作用于文本容器）：
+     span 透明文字只作选区命中区；::selection 用主题色保证浅/暗均可见。
+     --total-scale-factor/--scale-round-x 等由 PdfViewer 渲染时在容器上设置。 -->
+<style>
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 2;
+  user-select: text;
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer ::selection,
+.textLayer ::-moz-selection {
+  background: color-mix(in srgb, var(--el-color-primary, #409eff) 32%, transparent);
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
 }
 </style>

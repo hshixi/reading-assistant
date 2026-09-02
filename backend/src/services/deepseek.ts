@@ -43,6 +43,8 @@ export interface DeepSeekInput {
   action?: ActionType
   /** PNG dataURL。仅当前消息携带，历史只带文本省 token */
   imageDataUrl?: string
+  /** 选中原文：有动作且无图时注入 user 消息（文本动作不必走 vision） */
+  excerptText?: string
 }
 
 /** OpenAI 兼容的 messages 元素（vision 用 content 数组） */
@@ -111,7 +113,12 @@ async function buildMessages(
       ],
     })
   } else {
-    messages.push({ role: 'user', content: input.message })
+    // 动作携带选中原文时注入 <选中内容> 块：模型对文本动作直接翻译/解释/摘句，无需走图
+    const excerpt = input.excerptText?.trim()
+    const userText = excerpt
+      ? `${input.message ? `${input.message}\n\n` : ''}<选中内容>\n${excerpt}\n</选中内容>`
+      : input.message
+    messages.push({ role: 'user', content: userText })
   }
   return messages
 }

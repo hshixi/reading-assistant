@@ -118,7 +118,12 @@ export const useChatStore = defineStore('chat', {
 
     async send(
       text: string,
-      opts: { imageDataUrl?: string; action?: ActionType; selection?: Selection } = {},
+      opts: {
+        imageDataUrl?: string
+        action?: ActionType
+        selection?: Selection
+        excerptText?: string
+      } = {},
     ): Promise<void> {
       if (this.isStreaming) return
       const clean = text.trim()
@@ -170,6 +175,7 @@ export const useChatStore = defineStore('chat', {
             imageDataUrl: opts.imageDataUrl,
             action: opts.action,
             selection: opts.selection,
+            excerptText: opts.excerptText,
           },
           {
             onMeta: ({ messageId }) => {

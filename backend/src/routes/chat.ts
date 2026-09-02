@@ -158,6 +158,7 @@ export function createChatRouter(context: AppContext): Router {
             action: body.action,
             selection: body.selection,
             imageDataUrl: body.imageDataUrl,
+            excerptText: typeof body.excerptText === 'string' ? body.excerptText : undefined,
           })) {
             if (res.writableEnded || res.destroyed) {
               interrupted = true
@@ -173,6 +174,7 @@ export function createChatRouter(context: AppContext): Router {
             message,
             action: body.action,
             imageDataUrl: body.imageDataUrl,
+            excerptText: typeof body.excerptText === 'string' ? body.excerptText : undefined,
           }
           for await (const chunk of streamDeepSeek(input, aiSettings!, reqCtrl.signal)) {
             if (res.writableEnded || res.destroyed) {

@@ -93,6 +93,7 @@
       <main
         v-loading="loading"
         class="reader-main"
+        @contextmenu="onPdfContextMenu"
       >
         <PdfViewer
           v-if="src && !loadError"
@@ -125,6 +126,15 @@
         :class="{ dragging: splitDragging }"
         title="拖拽调整面板宽度"
         @mousedown="startSplitDrag"
+      />
+      <!-- V2-F6：选文右键菜单（Teleport 到 body，位置由 selMenu 给定） -->
+      <TextSelectionMenu
+        :visible="!!selMenu"
+        :x="selMenu?.x ?? 0"
+        :y="selMenu?.y ?? 0"
+        :payload="selMenu?.payload ?? null"
+        @action="onMenuAction"
+        @close="selMenu = null"
       />
 
       <aside
@@ -170,6 +180,10 @@ import SelectionOverlay, {
   type SelectionResult,
 } from '@/components/reader/SelectionOverlay.vue'
 import HighlightLayer from '@/components/reader/HighlightLayer.vue'
+import TextSelectionMenu, {
+  type TextAction,
+} from '@/components/reader/TextSelectionMenu.vue'
+import type { TextSelectionPayload } from '@/stores/reader'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
 import NotesPanel from '@/components/notes/NotesPanel.vue'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
@@ -197,6 +211,9 @@ const loadError = ref('')
 const selActive = ref(false)
 const showRight = ref(true)
 const rightTab = ref<'chat' | 'notes'>('chat')
+
+/* ---- V2-F6：选文右键菜单状态 ---- */
+const selMenu = ref<{ x: number; y: number; payload: TextSelectionPayload } | null>(null)
 
 /* ---- V2-F2：可拖分隔线 ---- */
 const bodyRef = ref<HTMLElement | null>(null)
@@ -257,6 +274,73 @@ function onSelection(sel: SelectionResult): void {
 function onPageCount(count: number): void {
   pageCount.value = count
   readerStore.pageCount = count
+}
+
+/* ---- V2-F6：PDF 页内右键 → 若命中「文本选区」则弹自定义菜单 ---- */
+
+function onPdfContextMenu(e: MouseEvent): void {
+  // 框选截图模式下不弹文本菜单（交给框选交互处理）
+  if (selActive.value) return
+  const hit = e.target as HTMLElement | null
+  if (!hit || !hit.closest('.page-wrap')) return // 页面外不拦截（如边距空白）
+  // 没有活跃的文本选区则不拦截：让系统默认行为（本 app 无默认菜单，等于无事发生）
+  const selObj = window.getSelection()
+  if (!selObj || selObj.isCollapsed) return
+  e.preventDefault()
+  const payload = readerStore.captureTextSelection()
+  if (readerStore.crossPageSelection) {
+    ElMessage.warning('请在同一页内选择文字（当前选区跨页）')
+    return
+  }
+  if (!payload) return
+  // 视口内钳制菜单位置（估算宽 240 / 高 190）
+  const M_W = 240
+  const M_H = 190
+  const x = Math.max(8, Math.min(e.clientX, window.innerWidth - M_W - 8))
+  const y = Math.max(8, Math.min(e.clientY, window.innerHeight - M_H - 8))
+  selMenu.value = { x, y, payload }
+  // 测试/调试钩子：harness 通过 window.__readerTextSelection 读取断言
+  ;(window as unknown as Record<string, unknown>).__readerTextSelection = payload
+}
+
+async function onMenuAction(payload: TextSelectionPayload, action: TextAction): Promise<void> {
+  selMenu.value = null
+  // 选区已消费：若恰好残留的是本次文本选择，清掉（不影响聊天区待发的框选截图）
+  if (readerStore.selection?.kind === 'text') readerStore.clearSelection()
+
+  if (action === 'highlight') {
+    // 高亮直接上页，无 AI（F5 语义：所见即所得）
+    try {
+      await readerStore.addHighlight({
+        pageNumber: payload.page,
+        rects: payload.rects,
+        color: 'yellow',
+        excerptText: payload.text,
+      })
+      ElMessage.success(`已在第 ${payload.page} 页高亮所选文字`)
+    } catch (err) {
+      ElMessage.error(err instanceof Error ? err.message : String(err))
+    }
+  } else {
+    // 翻译/解释复用聊天流式：右侧切到聊天并立即发送短指令 + 选中原文（原文由后端注入 AI prompt）
+    if (chatStore.isStreaming) {
+      ElMessage.warning('上一条回复仍在生成，请稍后再试')
+      return
+    }
+    showRight.value = true
+    rightTab.value = 'chat'
+    const instruction = action === 'translate' ? '翻译选中内容' : '解释选中内容'
+    await chatStore.send(instruction, {
+      action,
+      selection: { page: payload.page, rects: payload.rects },
+      excerptText: payload.text,
+    })
+  }
+  clearNativeSelection()
+}
+
+function clearNativeSelection(): void {
+  window.getSelection()?.removeAllRanges()
 }
 
 async function goTo(n: number): Promise<void> {
