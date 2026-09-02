@@ -19,14 +19,35 @@ import { ApiError } from '../middleware/error'
 
 /* ---------- DTO 转换 ---------- */
 
+/**
+ * V2：把 DB 里 `rect` 列读到任意形态的值归一化为行盒数组。
+ * V1 存单对象 {x,y,width,height} → 包成单元素数组；已有数组直接过；null/undefined → 兜底。
+ */
+function normalizeRects(v: unknown, fallback: Rect[] | null = null): Rect[] | null {
+  if (Array.isArray(v)) return v as Rect[]
+  if (v && typeof v === 'object' && isRectLike(v)) return [v as Rect]
+  return fallback
+}
+
+function isRectLike(v: unknown): boolean {
+  const r = v as Record<string, unknown>
+  return (
+    typeof r.x === 'number' &&
+    typeof r.y === 'number' &&
+    typeof r.width === 'number' &&
+    typeof r.height === 'number'
+  )
+}
+
 function noteToDto(n: Note): NoteDto {
   return {
     id: n.id,
     bookId: n.bookId,
     sessionId: n.sessionId,
     content: n.content,
+    excerptText: n.excerptText ?? null,
     pageNumber: n.pageNumber,
-    rect: n.rect,
+    rects: normalizeRects(n.rects),
     screenshotRelPath: n.screenshotRelPath,
     createdAt: (n.createdAt as Date).toISOString(),
     updatedAt: (n.updatedAt as Date).toISOString(),
@@ -38,7 +59,7 @@ function highlightToDto(h: Highlight): HighlightDto {
     id: h.id,
     bookId: h.bookId,
     pageNumber: h.pageNumber,
-    rect: h.rect,
+    rects: normalizeRects(h.rects, []) ?? [],
     color: h.color,
     excerptText: h.excerptText,
     noteId: h.noteId,
@@ -66,7 +87,7 @@ function numOr(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
-/** 从请求体解析归一化矩形；null=缺省、undefined=非法 */
+/** 从请求体解析归一化矩形（注释仍用单 rect）；null=缺省、undefined=非法 */
 function rectFromBody(v: unknown): Rect | null | undefined {
   if (v == null) return null
   const r = v as Partial<Rect>
@@ -79,6 +100,29 @@ function rectFromBody(v: unknown): Rect | null | undefined {
     return { x: r.x, y: r.y, width: r.width, height: r.height }
   }
   return undefined
+}
+
+/**
+ * V2：从请求体解析归一化行盒数组；null=缺省、undefined=非法。
+ * 接受数组，也兼容单个对象（V1 客户端）→ 包成单元素数组。
+ */
+function rectsFromBody(v: unknown): Rect[] | null | undefined {
+  if (v == null) return null
+  const arr = Array.isArray(v) ? v : [v]
+  const out: Rect[] = []
+  for (const item of arr) {
+    const r = item as Partial<Rect>
+    if (
+      typeof r.x !== 'number' ||
+      typeof r.y !== 'number' ||
+      typeof r.width !== 'number' ||
+      typeof r.height !== 'number'
+    ) {
+      return undefined
+    }
+    out.push({ x: r.x, y: r.y, width: r.width, height: r.height })
+  }
+  return out
 }
 
 function strOrNull(v: unknown): string | null {
@@ -120,15 +164,16 @@ export function createNotesRouter(): Router {
         await assertBook(bookId)
         const content = strOrNull(req.body?.content)
         if (!content) throw new ApiError(400, 'BAD_NOTE', '笔记内容不能为空')
-        const rect = rectFromBody(req.body?.rect)
-        if (rect === undefined) throw new ApiError(400, 'BAD_RECT', 'rect 格式非法')
+        const rects = rectsFromBody(req.body?.rects)
+        if (rects === undefined) throw new ApiError(400, 'BAD_RECT', 'rects 格式非法')
         const note = await getRepository(Note).save(
           getRepository(Note).create({
             bookId,
             sessionId: req.body?.sessionId != null ? numOr(req.body.sessionId, 0) : null,
             content,
+            excerptText: strOrNull(req.body?.excerptText),
             pageNumber: req.body?.pageNumber != null ? numOr(req.body.pageNumber, 0) : null,
-            rect,
+            rects,
             screenshotRelPath: strOrNull(req.body?.screenshotRelPath),
           }),
         )
@@ -158,9 +203,11 @@ export function createNotesRouter(): Router {
       const content = strOrNull(req.body?.content)
       if (content) patch.content = content
       if (req.body?.pageNumber != null) patch.pageNumber = numOr(req.body.pageNumber, 0)
-      const rect = rectFromBody(req.body?.rect)
-      if (rect === undefined) throw new ApiError(400, 'BAD_RECT', 'rect 格式非法')
-      if (rect !== null) patch.rect = rect
+      const excerpt = strOrNull(req.body?.excerptText)
+      if (req.body?.excerptText !== undefined) patch.excerptText = excerpt
+      const rects = rectsFromBody(req.body?.rects)
+      if (rects === undefined) throw new ApiError(400, 'BAD_RECT', 'rects 格式非法')
+      if (rects !== null) patch.rects = rects
       repo.merge(note, patch)
       await repo.save(note)
       res.json(noteToDto(note))
@@ -211,9 +258,9 @@ export function createHighlightsRouter(): Router {
       try {
         const bookId = numOr(req.params.bookId, 0)
         await assertBook(bookId)
-        const rect = rectFromBody(req.body?.rect)
-        if (rect === undefined || !rect) {
-          throw new ApiError(400, 'BAD_RECT', '高亮需要合法的 rect')
+        const rects = rectsFromBody(req.body?.rects)
+        if (rects === undefined || !rects || rects.length === 0) {
+          throw new ApiError(400, 'BAD_RECT', '高亮需要合法的 rects 行盒数组')
         }
         const pageNumber = numOr(req.body?.pageNumber, 0)
         if (pageNumber < 1) throw new ApiError(400, 'BAD_PAGE', 'pageNumber 必须为正整数')
@@ -221,7 +268,7 @@ export function createHighlightsRouter(): Router {
           getRepository(Highlight).create({
             bookId,
             pageNumber,
-            rect,
+            rects,
             color: typeof req.body?.color === 'string' ? req.body.color : 'yellow',
             excerptText: strOrNull(req.body?.excerptText),
             noteId: req.body?.noteId != null ? numOr(req.body.noteId, 0) : null,
@@ -254,9 +301,9 @@ export function createHighlightsRouter(): Router {
       const excerpt = strOrNull(req.body?.excerptText)
       if (req.body?.excerptText !== undefined) patch.excerptText = excerpt
       if (req.body?.pageNumber != null) patch.pageNumber = numOr(req.body.pageNumber, 0)
-      const rect = rectFromBody(req.body?.rect)
-      if (rect === undefined) throw new ApiError(400, 'BAD_RECT', 'rect 格式非法')
-      if (rect !== null) patch.rect = rect
+      const rects = rectsFromBody(req.body?.rects)
+      if (rects === undefined) throw new ApiError(400, 'BAD_RECT', 'rects 格式非法')
+      if (rects !== null) patch.rects = rects
       repo.merge(h, patch)
       await repo.save(h)
       res.json(highlightToDto(h))

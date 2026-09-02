@@ -30,9 +30,12 @@ export class Highlight {
   @Column({ name: 'page_number', type: 'int' })
   pageNumber!: number
 
-  /** 归一化矩形（0–1） */
-  @Column({ type: 'simple-json' })
-  rect!: Rect
+  /**
+   * V2：归一化行盒数组（0–1）。DB 列仍名 `rect`（V1 存单对象，读时归一化为数组）。
+   * simple-json 跨方言存 TEXT，前向兼容原列。
+   */
+  @Column({ name: 'rect', type: 'simple-json' })
+  rects!: Rect[]
 
   @Column({ type: 'varchar', length: 32, default: 'yellow' })
   color!: string

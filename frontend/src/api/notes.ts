@@ -8,9 +8,12 @@ import { ApiPaths, baseUrl, parseApiError } from './client'
 export interface NoteInput {
   bookId: number
   content: string
+  /** V2：选中原文摘录 */
+  excerptText?: string | null
   sessionId?: number
   pageNumber?: number
-  rect?: { x: number; y: number; width: number; height: number } | null
+  /** V2：归一化行盒数组（DB 列仍名 rect） */
+  rects?: { x: number; y: number; width: number; height: number }[] | null
   screenshotRelPath?: string | null
 }
 

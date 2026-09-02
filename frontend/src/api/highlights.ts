@@ -8,7 +8,8 @@ import { ApiPaths, baseUrl, parseApiError } from './client'
 export interface HighlightInput {
   bookId: number
   pageNumber: number
-  rect: Rect
+  /** V2：归一化行盒数组（多行文本每行一盒） */
+  rects: Rect[]
   color?: string
   excerptText?: string | null
 }

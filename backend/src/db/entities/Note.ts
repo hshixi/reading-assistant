@@ -38,12 +38,16 @@ export class Note {
   @Column({ type: 'text' })
   content!: string
 
+  /** V2：选中原文摘录（AI 整理笔记时回填原文；手动笔记的批注正文仍走 content） */
+  @Column({ name: 'excerpt_text', type: 'text', nullable: true })
+  excerptText!: string | null
+
   @Column({ name: 'page_number', type: 'int', nullable: true })
   pageNumber!: number | null
 
-  /** 归一化矩形（0–1），simple-json 跨方言存 TEXT */
-  @Column({ type: 'simple-json', nullable: true })
-  rect!: Rect | null
+  /** V2：归一化行盒数组（DB 列仍名 `rect`，V1 存单对象，读时归一化） */
+  @Column({ name: 'rect', type: 'simple-json', nullable: true })
+  rects!: Rect[] | null
 
   @Column({ name: 'screenshot_rel_path', type: 'varchar', length: 512, nullable: true })
   screenshotRelPath!: string | null

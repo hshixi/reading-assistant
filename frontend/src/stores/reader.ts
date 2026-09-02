@@ -10,12 +10,27 @@ import {
   type HighlightInput,
 } from '@/api/highlights'
 
-/** 框选结果：归一化矩形 + PNG dataURL，供聊天/AI 动作消费 */
-export interface ReaderSelection {
+/** 文本选择：pdf 文本层原生拖选 → 行盒 + 原文（V2 高亮/笔记语义） */
+export interface TextSelectionPayload {
+  kind: 'text'
   page: number
-  rectNorm: { x: number; y: number; w: number; h: number }
+  /** 归一化行盒（shared Rect，0–1） */
+  rects: Rect[]
+  /** 选中原文（落库 excerpt / 发聊天提及用） */
+  text: string
+}
+
+/** 框选截图：canvas 截取区域 → PNG（vision 提问/翻译图） */
+export interface ImageSelectionPayload {
+  kind: 'image'
+  page: number
+  /** 归一化矩形 */
+  rect: Rect
   imageDataUrl: string
 }
+
+/** V2：阅读器内一种选区，二者互斥（文本层拖选 或 截图框选） */
+export type ReaderSelection = TextSelectionPayload | ImageSelectionPayload
 
 export const useReaderStore = defineStore('reader', {
   state: () => ({
@@ -68,13 +83,3 @@ export const useReaderStore = defineStore('reader', {
     },
   },
 })
-
-/** 把框选的 rectNorm 转成 shared 的 Rect */
-export function toRect(sel: ReaderSelection): Rect {
-  return {
-    x: sel.rectNorm.x,
-    y: sel.rectNorm.y,
-    width: sel.rectNorm.w,
-    height: sel.rectNorm.h,
-  }
-}

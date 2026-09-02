@@ -19,18 +19,12 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import type { Rect as SharedRect } from '@reading/shared'
 
-/** 归一化矩形：坐标相对页面 CSS 尺寸，取值 [0,1]，随缩放自适应 */
-export interface RectNorm {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
+/** V2 框选截图结果：归一化矩形（shared Rect）+ PNG dataURL */
 export interface SelectionResult {
   page: number
-  rectNorm: RectNorm
+  rect: SharedRect
   imageDataUrl: string
 }
 
@@ -175,11 +169,11 @@ function captureSelection(sel: Rect): SelectionResult | null {
   const cw = bestRect.width
   const ch = bestRect.height
   if (cw <= 0 || ch <= 0) return null
-  const rectNorm: RectNorm = {
+  const rect: SharedRect = {
     x: (l - bestRect.left) / cw,
     y: (t - bestRect.top) / ch,
-    w: lw / cw,
-    h: lh / ch,
+    width: lw / cw,
+    height: lh / ch,
   }
 
   // 物理像素截图（源 canvas 像素密度），避免 Retina 模糊
@@ -197,7 +191,7 @@ function captureSelection(sel: Rect): SelectionResult | null {
   ctx.drawImage(best, sx, sy, sw, sh, 0, 0, sw, sh)
   const imageDataUrl = out.toDataURL('image/png')
 
-  return { page, rectNorm, imageDataUrl }
+  return { page, rect, imageDataUrl }
 }
 
 watch(

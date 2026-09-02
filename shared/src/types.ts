@@ -64,10 +64,14 @@ export interface Rect {
   height: number
 }
 
-/** 一次框选：所在页码 + 归一化矩形 */
+/**
+ * V2：一次文本选择/框选的几何 —— 所在页码 + 归一化行盒数组。
+ * 高亮/笔记落库用 rects（多行文本 → 多个行盒），旧 V1 单 rect 数据读取时归一化为单元素数组。
+ */
 export interface Selection {
   page: number
-  rect: Rect
+  /** 归一化行盒（0–1，通常一个文本行一个，随缩放等比准确） */
+  rects: Rect[]
 }
 
 export interface Note {
@@ -75,8 +79,12 @@ export interface Note {
   bookId: number
   sessionId: number | null
   content: string
+  /** V2：选中原文摘录（来源文本动作），AI 整理笔记也回填原文 */
+  excerptText: string | null
   pageNumber: number | null
-  rect: Rect | null
+  /** V2：归一化行盒数组（DB 列仍名 rect）；文本动作落库用，可空 */
+  rects: Rect[] | null
+  /** 截图留档（仅 V1 框选 AI 摘抄遗留数据） */
   screenshotRelPath: string | null
   createdAt: string
   updatedAt: string
@@ -86,8 +94,10 @@ export interface Highlight {
   id: number
   bookId: number
   pageNumber: number
-  rect: Rect
+  /** V2：归一化行盒数组（DB 列仍名 rect；V1 单 rect 读取时归一化为单元素数组） */
+  rects: Rect[]
   color: string
+  /** 被高亮的原文摘录 */
   excerptText: string | null
   noteId: number | null
   createdAt: string
@@ -149,7 +159,9 @@ export interface ChatRequest {
   imageDataUrl?: string
   /** 快捷动作：translate | explain | note | highlight */
   action?: ActionType
-  /** 动作所需的框选坐标（落库用，坐标由前端精确给定） */
+  /** 动作所需的选中文字（文本动作原文；note/highlight 落库用原文而非 AI 摘句） */
+  excerptText?: string
+  /** 动作所需的选中几何（rects 行盒坐标由前端精确给定） */
   selection?: Selection
 }
 

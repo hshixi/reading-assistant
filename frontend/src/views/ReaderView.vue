@@ -242,7 +242,12 @@ async function refitViewer(): Promise<void> {
 
 /** 框选完成：存入 store 供聊天发送时读取，并退出截图模式 */
 function onSelection(sel: SelectionResult): void {
-  readerStore.setSelection(sel)
+  readerStore.setSelection({
+    kind: 'image',
+    page: sel.page,
+    rect: sel.rect,
+    imageDataUrl: sel.imageDataUrl,
+  })
   selActive.value = false
   ElMessage.success(`已框选第 ${sel.page} 页区域，可发送给 AI`)
   // 测试/调试钩子：harness 通过 window.__readerSelection 读取断言

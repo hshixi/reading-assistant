@@ -1,17 +1,17 @@
 <template>
   <div class="chat-input">
-    <!-- 框选预览：有选区时可选择附带截图发送 -->
+    <!-- 框选截图预览（vision 提问/翻译图） -->
     <div
-      v-if="selection"
+      v-if="imageSel"
       class="selection-preview"
     >
       <img
-        :src="selection.imageDataUrl"
+        :src="imageSel.imageDataUrl"
         class="selection-thumb"
         alt="框选截图"
       >
       <div class="selection-info">
-        <span>第 {{ selection.page }} 页区域</span>
+        <span>第 {{ imageSel.page }} 页区域</span>
         <el-checkbox
           v-model="attachImage"
           size="small"
@@ -28,7 +28,7 @@
       </el-button>
     </div>
 
-    <!-- 快捷动作 -->
+    <!-- V1 快捷动作（V2 改为文本右键菜单触达；聊天提及 AI 整理走同一发送通道） -->
     <div class="quick-actions">
       <el-button
         size="small"
@@ -91,7 +91,7 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { ActionType, Selection } from '@reading/shared'
 import { useChatStore } from '@/stores/chat'
-import { toRect, useReaderStore } from '@/stores/reader'
+import { useReaderStore } from '@/stores/reader'
 
 const store = useChatStore()
 const readerStore = useReaderStore()
@@ -99,7 +99,10 @@ const readerStore = useReaderStore()
 const text = ref('')
 const attachImage = ref(true)
 
-const selection = computed(() => readerStore.selection)
+/** V2：本输入区只消费「框选截图」选区；文本选区走右键菜单/聊天提及，不经此处 */
+const imageSel = computed(() =>
+  readerStore.selection?.kind === 'image' ? readerStore.selection : null,
+)
 
 /** 动作是否需要选区（摘抄/高亮必须框选） */
 const REQUIRES_SELECTION: Partial<Record<ActionType, boolean>> = {
@@ -107,20 +110,12 @@ const REQUIRES_SELECTION: Partial<Record<ActionType, boolean>> = {
   highlight: true,
 }
 
-const canSend = computed(() => text.value.trim().length > 0 || !!selection.value)
+const canSend = computed(() => text.value.trim().length > 0 || !!imageSel.value)
 
 function toSharedSelection(): Selection | undefined {
-  const s = selection.value
+  const s = imageSel.value
   if (!s) return undefined
-  return {
-    page: s.page,
-    rect: {
-      x: s.rectNorm.x,
-      y: s.rectNorm.y,
-      width: s.rectNorm.w,
-      height: s.rectNorm.h,
-    },
-  }
+  return { page: s.page, rects: [s.rect] }
 }
 
 function clearSelection(): void {
@@ -128,12 +123,12 @@ function clearSelection(): void {
 }
 
 async function sendAction(action: ActionType): Promise<void> {
-  if (REQUIRES_SELECTION[action] && !selection.value) {
+  if (REQUIRES_SELECTION[action] && !imageSel.value) {
     ElMessage.warning('摘抄/高亮需要先框选页面区域')
     return
   }
   const sel = toSharedSelection()
-  const imageDataUrl = sel && attachImage.value ? selection.value?.imageDataUrl : undefined
+  const imageDataUrl = sel && attachImage.value ? imageSel.value?.imageDataUrl : undefined
   const typed = text.value.trim()
   const message =
     typed ||
@@ -148,14 +143,14 @@ async function sendAction(action: ActionType): Promise<void> {
 
   // M11 高亮：先把框选直接落库上页（不依赖 AI 回复，立即上页），
   // 再发聊天让 AI 提炼摘录（回复仅作文本展示）。
-  if (action === 'highlight' && selection.value) {
+  if (action === 'highlight' && imageSel.value) {
     try {
       await readerStore.addHighlight({
-        pageNumber: selection.value.page,
-        rect: toRect(selection.value),
+        pageNumber: imageSel.value.page,
+        rects: [imageSel.value.rect],
         color: 'yellow',
       })
-      ElMessage.success(`已在第 ${selection.value.page} 页添加高亮`)
+      ElMessage.success(`已在第 ${imageSel.value.page} 页添加高亮`)
     } catch (err) {
       ElMessage.error(err instanceof Error ? err.message : String(err))
     }
@@ -167,7 +162,7 @@ async function sendAction(action: ActionType): Promise<void> {
 async function onSend(): Promise<void> {
   const typed = text.value.trim()
   const sel = toSharedSelection()
-  const imageDataUrl = sel && attachImage.value ? selection.value?.imageDataUrl : undefined
+  const imageDataUrl = sel && attachImage.value ? imageSel.value?.imageDataUrl : undefined
   if (!typed && !imageDataUrl) return
   text.value = ''
   await store.send(typed, { imageDataUrl, selection: sel })

@@ -192,7 +192,8 @@ export function createChatRouter(context: AppContext): Router {
         }
       }
 
-      // AI 摘抄落库：action=note 且模型返回 JSON 笔记时，用前端框选 rect 落 notes 并广播 save
+      // AI 笔记落库：action=note 且模型返回 JSON 笔记时，用前端框选的 rects 行盒落 notes 并广播 save
+      // V2：原文（body.excerptText）回填 excerptText，坐标精确由前端给定、模型不参与。
       let saved: SseSave | null = null
       if (!errMsg && body.action === 'note' && body.selection && text.trim()) {
         const parsed = extractJsonObject(text)
@@ -204,8 +205,11 @@ export function createChatRouter(context: AppContext): Router {
                 bookId: body.bookId,
                 sessionId: session.id,
                 content,
+                excerptText: typeof body.excerptText === 'string' && body.excerptText.trim()
+                  ? body.excerptText.trim()
+                  : null,
                 pageNumber: body.selection.page,
-                rect: body.selection.rect,
+                rects: body.selection.rects,
               }),
             )
             saved = { kind: 'note', id: note.id }
