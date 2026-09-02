@@ -94,6 +94,8 @@
         v-loading="loading"
         class="reader-main"
         @contextmenu="onPdfContextMenu"
+        @pointerdown="onMainPointerDown"
+        @click="onMainClick"
       >
         <PdfViewer
           v-if="src && !loadError"
@@ -136,6 +138,14 @@
         @action="onMenuAction"
         @close="selMenu = null"
       />
+      <!-- N6-F5：点击页面上已有高亮 → 小卡片（显示原文 / 删除高亮） -->
+      <HighlightPopover
+        :visible="hlPopId !== null"
+        :x="hlPopX"
+        :y="hlPopY"
+        :highlight-id="hlPopId"
+        @close="closeHlPopover"
+      />
 
       <aside
         v-if="showRight"
@@ -157,11 +167,22 @@
           >
             笔记
           </button>
+          <button
+            class="right-tab"
+            :class="{ active: rightTab === 'highlights' }"
+            @click="rightTab = 'highlights'"
+          >
+            高亮
+          </button>
         </div>
         <div class="right-body">
           <ChatPanel v-show="rightTab === 'chat'" />
           <NotesPanel
             v-show="rightTab === 'notes'"
+            @jump="goTo"
+          />
+          <HighlightsPanel
+            v-show="rightTab === 'highlights'"
             @jump="goTo"
           />
         </div>
@@ -183,7 +204,10 @@ import HighlightLayer from '@/components/reader/HighlightLayer.vue'
 import TextSelectionMenu, {
   type TextAction,
 } from '@/components/reader/TextSelectionMenu.vue'
+import HighlightPopover from '@/components/reader/HighlightPopover.vue'
+import HighlightsPanel from '@/components/highlights/HighlightsPanel.vue'
 import type { TextSelectionPayload } from '@/stores/reader'
+import type { Highlight, Rect } from '@reading/shared'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
 import NotesPanel from '@/components/notes/NotesPanel.vue'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
@@ -210,10 +234,19 @@ const loading = ref(false)
 const loadError = ref('')
 const selActive = ref(false)
 const showRight = ref(true)
-const rightTab = ref<'chat' | 'notes'>('chat')
+const rightTab = ref<'chat' | 'notes' | 'highlights'>('chat')
 
 /* ---- V2-F6：选文右键菜单状态 ---- */
 const selMenu = ref<{ x: number; y: number; payload: TextSelectionPayload } | null>(null)
+
+/* ---- N6-F5：页面高亮点击 → 小卡片（显示原文 / 删除高亮） ---- */
+const hlPopId = ref<number | null>(null)
+const hlPopX = ref(0)
+const hlPopY = ref(0)
+/** main 上最近一次 pointerdown 记录：过滤拖拽选择后的 click */
+let lastDown: { x: number; y: number; t: number; hadSel: boolean } | null = null
+/** 延迟打开定时器：给双击选词留时间（新 pointerdown 即取消） */
+let pendingPopTimer: ReturnType<typeof setTimeout> | null = null
 
 /* ---- V2-F2：可拖分隔线 ---- */
 const bodyRef = ref<HTMLElement | null>(null)
@@ -343,7 +376,92 @@ function clearNativeSelection(): void {
   window.getSelection()?.removeAllRanges()
 }
 
+/* ---- N6-F5：点击页面上已有高亮 → 弹小卡片 ---- */
+
+function cancelPendingPop(): void {
+  if (pendingPopTimer !== null) {
+    clearTimeout(pendingPopTimer)
+    pendingPopTimer = null
+  }
+}
+
+function closeHlPopover(): void {
+  cancelPendingPop()
+  hlPopId.value = null
+}
+
+function onMainPointerDown(e: PointerEvent): void {
+  // 任何新按下都取消待开的卡片：避免双击选词/拖选后误弹
+  cancelPendingPop()
+  const sel = window.getSelection()
+  lastDown = {
+    x: e.clientX,
+    y: e.clientY,
+    t: Date.now(),
+    hadSel: !!(sel && !sel.isCollapsed && sel.rangeCount > 0),
+  }
+}
+
+function onMainClick(e: MouseEvent): void {
+  if (selActive.value) return // 截图框选模式不处理
+  const d = lastDown
+  // 必须是紧跟在 main 内 pointerdown 的点击（此前被 popover 遮罩吞掉的 click 不会带最近 down）
+  if (!d || Date.now() - d.t > 500) return
+  if (Math.abs(e.clientX - d.x) > 4 || Math.abs(e.clientY - d.y) > 4) return
+  if (d.hadSel) return // 按下时仍有选区 → 意在取消选词，不弹卡片
+  const hit = highlightAtScreenPoint(e.clientX, e.clientY)
+  if (!hit) return // 空白/普通文字：交给默认行为
+  lastDown = null
+  const pos = clampPopoverPos(e.clientX, e.clientY)
+  // 延迟 200ms 打开：若紧接着是双击选词（新一轮 pointerdown），先取消
+  pendingPopTimer = setTimeout(() => {
+    pendingPopTimer = null
+    hlPopId.value = hit.id
+    hlPopX.value = pos.x
+    hlPopY.value = pos.y
+  }, 200)
+}
+
+/** 读行盒；对 V1 遗留单 rect 防御兜底（与 HighlightLayer 同一约定） */
+function rectsOf(h: Highlight): Rect[] {
+  if (Array.isArray(h.rects)) return h.rects
+  const legacy = (h as unknown as { rect?: Rect }).rect
+  return legacy ? [legacy] : []
+}
+
+/** 屏幕坐标 → 命中当前页某条高亮（含某一行盒）则返回之 */
+function highlightAtScreenPoint(cx: number, cy: number): Highlight | null {
+  const el = document.elementFromPoint(cx, cy) as HTMLElement | null
+  const wrap = el?.closest?.('.page-wrap') as HTMLElement | null
+  if (!wrap) return null
+  const textEl = wrap.querySelector('[data-page-text]') as HTMLElement | null
+  const page = Number(textEl?.dataset?.pageText ?? 0)
+  if (!page) return null
+  const wr = wrap.getBoundingClientRect()
+  if (wr.width <= 0 || wr.height <= 0) return null
+  const nx = Math.max(0, Math.min(1, (cx - wr.left) / wr.width))
+  const ny = Math.max(0, Math.min(1, (cy - wr.top) / wr.height))
+  for (const h of readerStore.highlights) {
+    if (h.pageNumber !== page) continue
+    for (const r of rectsOf(h)) {
+      if (nx >= r.x && nx <= r.x + r.width && ny >= r.y && ny <= r.y + r.height) return h
+    }
+  }
+  return null
+}
+
+/** 视口内钳制卡片位置（宽 280 / 估高 170；靠底则翻到上方） */
+function clampPopoverPos(x: number, y: number): { x: number; y: number } {
+  const POP_W = 280
+  const POP_H = 170
+  const nx = Math.max(8, Math.min(x, window.innerWidth - POP_W - 8))
+  let ny = y + 12
+  if (ny + POP_H > window.innerHeight - 8) ny = Math.max(8, y - POP_H - 8)
+  return { x: nx, y: ny }
+}
+
 async function goTo(n: number): Promise<void> {
+  closeHlPopover()
   page.value = Math.max(1, Math.min(n, pageCount.value || 1))
   await viewerRef.value?.goToPage(page.value)
 }
@@ -375,6 +493,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onSplitMove)
   window.removeEventListener('mouseup', endSplitDrag)
   document.body.classList.remove('resizing-cols')
+  cancelPendingPop()
 })
 </script>
 
