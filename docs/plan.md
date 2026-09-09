@@ -102,6 +102,16 @@ V2 规划与逐模块根因见 `.claude/plans/mac-app-dmg-app-1-pdf-2-ai-ai-high
 - 0.2.1 dmg 实测：300 页 PDF 导入即显示页数；遗留「解析中」书打开自愈；翻页至正文深处渲染正常、
   控制台无 JBig2/CSP 报错。
 
+## V2.4 / V2.5 迭代模块日志（未发布，基线 main=00cd9f2）
+
+下个版本两块需求（用户 2026-09-09 确认方案，见 `.claude/plans/…federated-hammock.md`）：
+V2.5 书架卡片 + V2.4 扫描版区域笔记/高亮。每模块一个 `feat/*` 分支，squash 合并后在此登记。
+
+| # | 模块 | 交付物 | 状态 |
+|---|---|---|---|
+| R1 | V2.5 书架卡片进度/笔记数 | Book.noteCount 聚合（列表+详情）；BookCover 封面底进度条；meta 精简两行 | ✅ 00cd9f2（dev:prod 实测 OK） |
+| R2 | V2.4 扫描版区域笔记/高亮 | Highlight 加图片列 + region-store 落盘 + deepseek 转写分支 + 框选迷你菜单 + 细边框标记 + 面板缩略图/批注 | 🚧 开发中 |
+
 ## 分支纪律
 
 - `main` 为保护分支，仅接受 `feat/*` 的 squash merge。
