@@ -24,6 +24,17 @@
     >
       <Document />
     </el-icon>
+    <!-- V2.5：底部细进度条（0–100 或 null 隐藏；null = pageCount 未知不误导） -->
+    <div
+      v-if="progress != null"
+      class="cover-progress"
+      data-test="cover-progress"
+    >
+      <div
+        class="cover-progress-fill"
+        :style="{ width: fillWidth }"
+      />
+    </div>
   </div>
 </template>
 
@@ -32,7 +43,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Document, Loading } from '@element-plus/icons-vue'
 import { bookCoverUrl } from '@/api/client'
 
-const props = defineProps<{ bookId: number; title: string }>()
+const props = defineProps<{ bookId: number; title: string; progress?: number | null }>()
+
+/** 填充宽度：clamp 0–100（lastPage 偶发超过 pageCount 时封顶，避免条溢出） */
+const fillWidth = computed(() => `${Math.max(0, Math.min(100, props.progress ?? 0))}%`)
 
 type CoverState = 'loading' | 'ok' | 'fail'
 const state = ref<CoverState>('loading')
@@ -126,5 +140,20 @@ function onError(): void {
   to {
     transform: translate(-50%, -50%) rotate(360deg);
   }
+}
+/* V2.5：封面底部细进度条 —— 轨道低调、填充用主题主色，暗/浅主题自适应 */
+.cover-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: var(--el-fill-color-darker);
+  z-index: 2;
+}
+.cover-progress-fill {
+  height: 100%;
+  background: var(--el-color-primary);
+  transition: width 0.2s ease;
 }
 </style>

@@ -60,25 +60,33 @@
           </div>
         </template>
         <!-- V2.1-F：卡片内嵌 PDF 首页封面预览，标题 + 封面一眼认出是哪个文件 -->
+        <!-- V2.5：progress 传阅读进度百分比（pageCount 未知为 null → 不渲染底部条） -->
         <BookCover
           :book-id="book.id"
           :title="book.title"
+          :progress="progressOf(book)"
         />
+        <!-- V2.5：meta 精简两行 —— 行1 文件名 + 右对齐笔记数；行2 页数 · 阅读进度 -->
         <div class="book-meta">
-          <div class="meta-row">
-            <el-icon><Document /></el-icon>
-            <span>{{ book.fileName }}</span>
+          <div class="meta-line">
+            <el-icon class="meta-icon">
+              <Document />
+            </el-icon>
+            <span
+              class="meta-file"
+              :title="`${book.fileName} · ${formatSize(book.fileSize)}`"
+            >{{ book.fileName }}</span>
+            <span class="meta-notes">
+              <el-icon><Notebook /></el-icon>
+              <span>{{ book.noteCount ?? 0 }}</span>
+            </span>
           </div>
-          <div class="meta-row">
-            <el-icon><Files /></el-icon>
-            <span>{{ book.pageCount ?? '解析中…' }} 页</span>
-          </div>
-          <div class="meta-row">
-            <el-icon><Cpu /></el-icon>
-            <span>{{ formatSize(book.fileSize) }}</span>
-          </div>
-          <div class="meta-row muted">
-            {{ formatDate(book.createdAt) }}
+          <div class="meta-line muted">
+            <el-icon class="meta-icon">
+              <Files />
+            </el-icon>
+            <span v-if="book.pageCount != null">{{ book.pageCount }} 页 · 阅读 {{ progressText(book) }}%</span>
+            <span v-else>解析中…</span>
           </div>
         </div>
         <div
@@ -111,7 +119,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Files, Cpu, Setting } from '@element-plus/icons-vue'
+import { Document, Files, Notebook, Setting } from '@element-plus/icons-vue'
 import type { Book } from '@reading/shared'
 import { useBookStore } from '@/stores/book'
 import ThemeToggle from '@/components/common/ThemeToggle.vue'
@@ -128,8 +136,21 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('zh-CN', { hour12: false })
+/**
+ * V2.5：阅读进度百分比（0–100）。
+ * pageCount 未知（解析中/失败）→ null（调用方不渲染条、显示「解析中…」）；
+ * 已知但从未读过（lastPage null/0）→ 0（未开始，条空、显示 0.00%）。
+ */
+function progressOf(book: Book): number | null {
+  const total = book.pageCount
+  if (total == null || total <= 0) return null
+  if (book.lastPage == null || book.lastPage <= 0) return 0
+  // lastPage 偶发大于 pageCount（回填前后不一致）时封顶，避免进度溢出
+  return Math.min(100, (book.lastPage / total) * 100)
+}
+
+function progressText(book: Book): string {
+  return (progressOf(book) ?? 0).toFixed(2)
 }
 
 function pickFile(): void {
@@ -239,12 +260,31 @@ onMounted(() => store.fetchBooks())
   color: var(--el-text-color-regular);
   font-size: 13px;
 }
-.meta-row {
+.meta-line {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
-.meta-row.muted {
+.meta-line.muted {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.meta-icon {
+  flex: none;
+}
+.meta-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta-notes {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }

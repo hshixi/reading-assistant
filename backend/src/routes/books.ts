@@ -17,7 +17,7 @@ import type { Repository } from 'typeorm'
 import { ApiPaths } from '@reading/shared'
 import type { Book as BookDto } from '@reading/shared'
 import { getRepository } from '../db'
-import { Book } from '../db/entities'
+import { Book, Note } from '../db/entities'
 import { BookStore } from '../services/book-store'
 import { countPdfPages } from '../services/page-count'
 import { renderPdfCover } from '../services/cover'
@@ -42,6 +42,22 @@ function bookToDto(book: Book): BookDto {
     createdAt: iso(book.createdAt)!,
     updatedAt: iso(book.updatedAt)!,
   }
+}
+
+/** V2.5：统计每本书的笔记条数（书架卡片展示）。notes.book_id 有索引，量小两查无碍；
+ * COUNT(*) 跨驱动（SQLite/MySQL）读回可能是字符串或数字，统一 Number() 兜底。 */
+async function noteCountsByBook(bookIds: number[]): Promise<Map<number, number>> {
+  const counts = new Map<number, number>()
+  if (bookIds.length === 0) return counts
+  const rows = await getRepository(Note)
+    .createQueryBuilder('n')
+    .select('n.bookId', 'book_id')
+    .addSelect('COUNT(*)', 'cnt')
+    .where('n.bookId IN (:...ids)', { ids: bookIds })
+    .groupBy('n.bookId')
+    .getRawMany<{ book_id: number | string; cnt: string | number }>()
+  for (const row of rows) counts.set(Number(row.book_id), Number(row.cnt))
+  return counts
 }
 
 async function loadBookOr404(repo: Repository<Book>, id: number): Promise<Book> {
@@ -112,21 +128,23 @@ export function createBooksRouter(context: AppContext): Router {
     }
   })
 
-  // GET /api/books —— 列表
+  // GET /api/books —— 列表（V2.5：附带每本笔记数 noteCount）
   router.get(ApiPaths.books, async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const books = await getRepository(Book).find({ order: { createdAt: 'DESC' } })
-      res.json(books.map(bookToDto))
+      const counts = await noteCountsByBook(books.map((b) => b.id))
+      res.json(books.map((b) => ({ ...bookToDto(b), noteCount: counts.get(b.id) ?? 0 })))
     } catch (err) {
       next(err)
     }
   })
 
-  // GET /api/books/:id —— 详情
+  // GET /api/books/:id —— 详情（V2.5：附带笔记数，书架 ensurePageCount 轮询会整体替换列表项）
   router.get(ApiPaths.book(':id'), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const book = await loadBookOr404(getRepository(Book), Number(req.params.id))
-      res.json(bookToDto(book))
+      const counts = await noteCountsByBook([book.id])
+      res.json({ ...bookToDto(book), noteCount: counts.get(book.id) ?? 0 })
     } catch (err) {
       next(err)
     }

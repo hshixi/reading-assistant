@@ -17,6 +17,8 @@ export interface Book {
   /** 上次阅读页码（阅读进度：退出时记忆、重开自动定位；从未读过为 null） */
   lastPage: number | null
   lastOpenedAt: string | null
+  /** V2.5：该书笔记条数（书架卡片展示用）。仅列表/详情接口附带；上传/改标题等响应省略，前端以 ?? 0 兜底 */
+  noteCount?: number
   createdAt: string
   updatedAt: string
 }
