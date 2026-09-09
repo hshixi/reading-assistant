@@ -21,12 +21,27 @@
         >
           <div class="hl-head">
             <span class="hl-page">第 {{ h.pageNumber }} 页</span>
+            <!-- V2.4：区域截图高亮 → 徽标提示为「区域截图」（细边框标记） -->
             <span
+              v-if="h.screenshotRelPath"
+              class="hl-badge"
+            >区域截图</span>
+            <span
+              v-else
               class="hl-color-dot"
               :style="{ background: h.color || 'yellow' }"
             />
             <span class="hl-time">{{ timeText(h.createdAt) }}</span>
           </div>
+          <!-- V2.4：区域截图高亮 → 缩略图（后端路由加载；失效则隐藏只剩摘录） -->
+          <img
+            v-if="h.screenshotRelPath && !thumbFailed[h.id]"
+            :src="bookRegionUrl(h.bookId, h.screenshotRelPath)"
+            class="hl-thumb"
+            alt="框选截图"
+            loading="lazy"
+            @error="onThumbError(h.id)"
+          >
           <div class="hl-excerpt">
             {{ h.excerptText || `第 ${h.pageNumber} 页区域（无原文摘录）` }}
           </div>
@@ -55,8 +70,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { bookRegionUrl } from '@/api/client'
 import { useReaderStore } from '@/stores/reader'
 
 const emit = defineEmits<{ jump: [page: number] }>()
@@ -69,6 +85,12 @@ const highlights = computed(() => readerStore.highlights)
 const sortedHighlights = computed(() =>
   [...highlights.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
 )
+
+/** V2.4：截图加载失败（后端文件缺失等）→ 该条缩略图隐藏，只留摘录 */
+const thumbFailed = ref<Record<number, boolean>>({})
+function onThumbError(id: number): void {
+  thumbFailed.value[id] = true
+}
 
 function timeText(iso: string): string {
   const d = new Date(iso)
@@ -139,6 +161,25 @@ async function remove(id: number): Promise<void> {
   height: 10px;
   border-radius: 3px;
   display: inline-block;
+}
+/* V2.4：区域截图徽标 */
+.hl-badge {
+  font-size: 11px;
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+/* V2.4：区域截图缩略图 */
+.hl-thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: var(--el-fill-color-lighter);
 }
 .hl-time {
   font-size: 12px;

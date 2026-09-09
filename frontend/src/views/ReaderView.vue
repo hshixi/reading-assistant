@@ -101,9 +101,15 @@
         >
           <!-- M11：每页包裹层内渲染高亮覆盖层（slot 按页码传入，百分比定位随缩放自适应） -->
           <template #page="{ num }">
-            <HighlightLayer :page="num" />
+            <HighlightLayer
+              :page="num"
+              :flash-id="hlFlashId"
+            />
             <!-- V2-F7：笔记原文下划线层 -->
-            <NoteMarkLayer :page="num" />
+            <NoteMarkLayer
+              :page="num"
+              :flash-id="noteFlashId"
+            />
           </template>
         </PdfViewer>
         <el-empty
@@ -134,6 +140,14 @@
         :payload="selMenu?.payload ?? null"
         @action="onMenuAction"
         @close="selMenu = null"
+      />
+      <!-- V2.4：框选区域后的迷你菜单（笔记 / 高亮 / 发聊天） -->
+      <RegionActionMenu
+        :visible="!!regionMenu"
+        :x="regionMenu?.x ?? 0"
+        :y="regionMenu?.y ?? 0"
+        @action="onRegionAction"
+        @close="regionMenu = null"
       />
       <!-- N6-F5：点击页面上已有高亮 → 小卡片（显示原文 / 删除高亮） -->
       <HighlightPopover
@@ -214,6 +228,9 @@ import NoteHoverTooltip from '@/components/reader/NoteHoverTooltip.vue'
 import TextSelectionMenu, {
   type TextAction,
 } from '@/components/reader/TextSelectionMenu.vue'
+import RegionActionMenu, {
+  type RegionAction,
+} from '@/components/reader/RegionActionMenu.vue'
 import HighlightPopover from '@/components/reader/HighlightPopover.vue'
 import HighlightsPanel from '@/components/highlights/HighlightsPanel.vue'
 import type { TextSelectionPayload } from '@/stores/reader'
@@ -248,6 +265,13 @@ const rightTab = ref<'chat' | 'notes' | 'highlights'>('chat')
 
 /* ---- V2-F6：选文右键菜单状态 ---- */
 const selMenu = ref<{ x: number; y: number; payload: TextSelectionPayload } | null>(null)
+
+/* ---- V2.4：框选区域迷你菜单（笔记/高亮/发聊天）状态 ---- */
+const regionMenu = ref<{ x: number; y: number; sel: SelectionResult } | null>(null)
+/** 页面标记聚焦闪烁：命中某条记录时整组 mark 短暂点亮（新建/跳页定位用） */
+const noteFlashId = ref<number | null>(null)
+const hlFlashId = ref<number | null>(null)
+let flashTimer: ReturnType<typeof setTimeout> | null = null
 
 /* ---- N6-F5：页面高亮点击 → 小卡片（显示原文 / 删除高亮） ---- */
 const hlPopId = ref<number | null>(null)
@@ -307,18 +331,87 @@ async function refitViewer(): Promise<void> {
   if (viewerRef.value) await viewerRef.value.fitWidth()
 }
 
-/** 框选完成：存入 store 供聊天发送时读取，并退出截图模式 */
+/**
+ * 框选完成：退出截图模式，弹出迷你菜单（笔记 / 高亮 / 发聊天）由用户决定去向。
+ * 发聊天沿用旧行为（存入 store 供聊天输入区 chip 预览）；笔记/高亮走 SSE 落库。
+ */
 function onSelection(sel: SelectionResult): void {
-  readerStore.setSelection({
-    kind: 'image',
-    page: sel.page,
-    rect: sel.rect,
-    imageDataUrl: sel.imageDataUrl,
-  })
   readerStore.cancelSelect()
-  ElMessage.success(`已框选第 ${sel.page} 页区域，可发送给 AI`)
+  // 迷你菜单锚在 mouseup 处（估宽 240 / 高 190），视口内钳制
+  const M_W = 240
+  const M_H = 190
+  const x = Math.max(8, Math.min(sel.vx + 12, window.innerWidth - M_W - 8))
+  const y = Math.max(8, Math.min(sel.vy + 14, window.innerHeight - M_H - 8))
+  regionMenu.value = { x, y, sel }
   // 测试/调试钩子：harness 通过 window.__readerSelection 读取断言
   ;(window as unknown as Record<string, unknown>).__readerSelection = sel
+}
+
+/** 迷你菜单动作：发聊天保留旧行为；笔记/高亮经既有聊天 SSE 走 OCR 逐字转写落库 */
+async function onRegionAction(action: RegionAction): Promise<void> {
+  const m = regionMenu.value
+  regionMenu.value = null
+  if (!m) return
+  const sel = m.sel
+
+  if (action === 'chat') {
+    readerStore.setSelection({
+      kind: 'image',
+      page: sel.page,
+      rect: sel.rect,
+      imageDataUrl: sel.imageDataUrl,
+    })
+    ElMessage.success(`已框选第 ${sel.page} 页区域，可发送给 AI`)
+    return
+  }
+
+  if (chatStore.isStreaming) {
+    ElMessage.warning('上一条回复仍在生成，请稍后再试')
+    return
+  }
+  const label = action === 'note' ? '笔记' : '高亮'
+  showRight.value = true
+  rightTab.value = 'chat'
+  ElMessage.info(`正在识别并记录到${label}…`)
+  const instruction =
+    action === 'note'
+      ? '把图中框选区域的文字转写并整理成笔记'
+      : '把图中框选区域的文字转写并保存为高亮'
+  const savedId = await chatStore.send(instruction, {
+    action,
+    imageDataUrl: sel.imageDataUrl,
+    selection: { page: sel.page, rects: [sel.rect] },
+    // 关键：不带 excerptText → 后端按「扫描区域逐字转写」分支处理（见 deepseek.systemPromptFor）
+  })
+
+  if (savedId != null) {
+    // 落库成功：刷新并切到对应面板展示，页面上的该记录 mark 闪烁定位
+    if (action === 'note') {
+      await notesStore.refresh()
+      rightTab.value = 'notes'
+      noteFocusId.value = savedId // NotesPanel 滚动定位 + 卡片闪烁
+      flashPageMark('note', savedId)
+    } else {
+      await readerStore.loadHighlights()
+      rightTab.value = 'highlights'
+      flashPageMark('highlight', savedId)
+    }
+    ElMessage.success(`已识别并记录到${label}`)
+  } else {
+    ElMessage.warning(`未能识别出可用文字，未生成${label}`)
+  }
+}
+
+/** 页面 mark 聚焦闪烁：给某条记录的 overlay 短暂加亮（随后自动熄灭） */
+function flashPageMark(kind: 'note' | 'highlight', id: number): void {
+  if (flashTimer) clearTimeout(flashTimer)
+  noteFlashId.value = kind === 'note' ? id : null
+  hlFlashId.value = kind === 'highlight' ? id : null
+  flashTimer = setTimeout(() => {
+    noteFlashId.value = null
+    hlFlashId.value = null
+    flashTimer = null
+  }, 1600)
 }
 
 function onPageCount(count: number): void {
@@ -651,6 +744,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('mouseup', endSplitDrag)
   document.body.classList.remove('resizing-cols')
   cancelPendingPop()
+  if (flashTimer) {
+    clearTimeout(flashTimer)
+    flashTimer = null
+  }
 })
 </script>
 

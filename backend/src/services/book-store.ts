@@ -28,6 +28,11 @@ export class BookStore {
     return path.join(this.booksDir, String(id), 'cover.png')
   }
 
+  /** books/{id}/region —— V2.4 区域截图目录（扫描版框选留档，随书删除清理） */
+  regionDir(id: number): string {
+    return path.join(this.booksDir, String(id), 'region')
+  }
+
   /** DB 中存盘的相对路径（相对 dataDir） */
   relPath(id: number): string {
     return `books/${id}/original.pdf`

@@ -231,24 +231,29 @@ async function onSend(): Promise<void> {
   const imgUrl = attachedImageUrl()
   if (!typed && !imgUrl) return
 
-  // N9-B3 + V2.1-P3：提及→动作。仅当存在「文本选区」时把 typed 命中的动作
+  // N9-B3 + V2.1-P3：提及→动作。存在「文本选区」或「已附带的截图」时把 typed 命中的动作
   // 附加到本消息（同右键菜单动作通道，note/highlight 经后端解析 JSON 落库）。
   const t = textSel.value
+  const img = imageSel.value // 框选截图（可能被 attachImage 勾选关掉，imgUrl 才代表真正随消息发送）
   // 功能提问（含 什么/怎么/为什么…）不当作动作命令：如「笔记是什么」「高亮怎么用」
-  const mentionAction = t && !looksQuestionish(typed) ? resolveChatAction(typed) : null
-  // 无文本选区却明确提及「高亮/笔记」这类选区动作 → 提示先选文字（功能提问除外）
-  if (!t && !looksQuestionish(typed)) {
+  const mentionAction = (t || imgUrl) && !looksQuestionish(typed) ? resolveChatAction(typed) : null
+  // 无文本/截图却明确提及「高亮/笔记」这类选区动作 → 提示先框选或选字（功能提问除外）
+  if (!t && !imgUrl && !looksQuestionish(typed)) {
     const a = resolveChatAction(typed)
     if (a === 'highlight' || a === 'note') {
-      ElMessage.warning('请先拖动选中文字，再提及「高亮 / 笔记」动作')
+      ElMessage.warning('请先框选区域或选中文字，再提及「高亮 / 笔记」动作')
       return
     }
   }
 
-  // 文本原文随消息作为上下文（N9 提及动作在此同一通道上叠加 action）
-  const txtSel: Selection | undefined = t
-    ? { page: t.page, rects: t.rects }
-    : undefined
+  // 文本原文随消息作为上下文（N9 提及动作在此同一通道上叠加 action）；
+  // V2.4 仅图片选区提及 note/highlight：附上截图的归一化矩形（region 记录边界），无 excerpt（后端走 OCR 转写分支）
+  let txtSel: Selection | undefined
+  if (t) {
+    txtSel = { page: t.page, rects: t.rects }
+  } else if (img && imgUrl && (mentionAction === 'note' || mentionAction === 'highlight')) {
+    txtSel = { page: img.page, rects: [img.rect] }
+  }
 
   text.value = ''
   try {

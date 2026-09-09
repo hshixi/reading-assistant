@@ -15,6 +15,7 @@ import { getRepository } from '../db'
 import { Book, ChatMessage, ChatSession, Highlight, Note } from '../db/entities'
 import { streamAiChunks } from '../services/chat-provider'
 import { isAbortError, streamDeepSeek, type DeepSeekInput } from '../services/deepseek'
+import { saveRegionPng } from '../services/region-store'
 import { getAiSettings } from '../services/ai-settings'
 import { ApiError } from '../middleware/error'
 import type { AppContext } from '../app'
@@ -205,56 +206,74 @@ export function createChatRouter(context: AppContext): Router {
         }
       }
 
-      // AI 笔记落库：action=note 且模型返回 JSON 笔记时，用前端框选的 rects 行盒落 notes 并广播 save
-      // V2：原文（body.excerptText）回填 excerptText，坐标精确由前端给定、模型不参与。
+      // AI 落库：note/highlight 动作、模型返回 JSON、且有前端 rects 时落库并广播 save。
+      // V2：文本动作原文（body.excerptText）所见即所得优先；V2.4 扫描区域（带图、无 excerpt）走
+      // 逐字转写分支 —— 模型 excerpt 兜底原文，且把框选截图落盘填 screenshotRelPath。
+      // 坐标精确由前端给定、模型不参与；空转写（无 excerpt 且无 content）不产生空记录。
       let saved: SseSave | null = null
-      if (!errMsg && body.action === 'note' && body.selection && text.trim()) {
+      if (
+        !errMsg &&
+        body.selection &&
+        text.trim() &&
+        (body.action === 'note' || body.action === 'highlight')
+      ) {
         const parsed = extractJsonObject(text)
-        if (parsed?.type === 'note') {
-          const content = String(parsed.content ?? parsed.title ?? '').trim()
-          if (content) {
-            const note = await getRepository(Note).save(
-              getRepository(Note).create({
-                bookId: body.bookId,
-                sessionId: session.id,
-                content,
-                excerptText: typeof body.excerptText === 'string' && body.excerptText.trim()
-                  ? body.excerptText.trim()
-                  : null,
-                pageNumber: body.selection.page,
-                rects: body.selection.rects,
-              }),
-            )
-            saved = { kind: 'note', id: note.id }
-            sse(res, 'save', saved)
-          }
-        }
-      }
-
-      // AI 高亮摘录落库：action=highlight 且模型返回 JSON 摘录时，用前端 rects 落 highlights 并广播 save
-      // V2：摘录正文优先取 body.excerptText（用户选中的原文，所见即所得）；模型 excerpt 作兜底。
-      if (!errMsg && body.action === 'highlight' && body.selection && text.trim()) {
-        const parsed = extractJsonObject(text)
-        if (parsed?.type === 'highlight') {
-          const fromUser =
-            typeof body.excerptText === 'string' && body.excerptText.trim()
-              ? body.excerptText.trim()
-              : null
+        try {
           const fromModel =
-            typeof parsed.excerpt === 'string' && parsed.excerpt.trim()
+            parsed && typeof parsed.excerpt === 'string' && parsed.excerpt.trim()
               ? parsed.excerpt.trim()
               : null
-          const highlight = await getRepository(Highlight).save(
-            getRepository(Highlight).create({
-              bookId: body.bookId,
-              pageNumber: body.selection.page,
-              rects: body.selection.rects,
-              color: 'yellow',
-              excerptText: fromUser ?? fromModel,
-            }),
-          )
-          saved = { kind: 'highlight', id: highlight.id }
-          sse(res, 'save', saved)
+          if (body.action === 'note' && parsed?.type === 'note') {
+            // 原文：文本动作用 body.excerptText；扫描区域无 excerpt 时用模型逐字转写
+            const excerptText = excerpt ?? fromModel
+            // content：模型整理的批注；扫描区域若仅转写无整理则回退到原文
+            const content = String(parsed.content ?? parsed.title ?? '').trim() || excerptText || ''
+            if (content) {
+              const screenshotRelPath =
+                body.imageDataUrl
+                  ? await saveRegionPng(context.config.dataDir, body.bookId, body.imageDataUrl)
+                  : null
+              const note = await getRepository(Note).save(
+                getRepository(Note).create({
+                  bookId: body.bookId,
+                  sessionId: session.id,
+                  content,
+                  excerptText,
+                  pageNumber: body.selection.page,
+                  rects: body.selection.rects,
+                  screenshotRelPath,
+                }),
+              )
+              saved = { kind: 'note', id: note.id }
+              sse(res, 'save', saved)
+            }
+          } else if (body.action === 'highlight' && parsed?.type === 'highlight') {
+            // 摘录正文：文本动作优先 body.excerptText；扫描区域（无 excerpt）用模型转写原文
+            const excerptText = excerpt ?? fromModel
+            if (excerptText) {
+              const screenshotRelPath =
+                body.imageDataUrl
+                  ? await saveRegionPng(context.config.dataDir, body.bookId, body.imageDataUrl)
+                  : null
+              const highlight = await getRepository(Highlight).save(
+                getRepository(Highlight).create({
+                  bookId: body.bookId,
+                  pageNumber: body.selection.page,
+                  rects: body.selection.rects,
+                  color: 'yellow',
+                  excerptText,
+                  screenshotRelPath,
+                }),
+              )
+              saved = { kind: 'highlight', id: highlight.id }
+              sse(res, 'save', saved)
+            }
+          }
+        } catch (err) {
+          // 截图落盘 / 落库失败：报错结束，不产生半截记录（消息流仍保留）
+          const eMsg = err instanceof Error ? err.message : String(err)
+          errMsg = eMsg
+          sse(res, 'error', { message: eMsg })
         }
       }
 

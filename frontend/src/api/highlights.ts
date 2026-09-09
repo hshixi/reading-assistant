@@ -12,6 +12,8 @@ export interface HighlightInput {
   rects: Rect[]
   color?: string
   excerptText?: string | null
+  /** V2.4：区域/扫描类记录留档截图文件名（存 books/{bookId}/region/；非空 = 细边框区域） */
+  screenshotRelPath?: string | null
 }
 
 export async function listHighlights(bookId: number): Promise<Highlight[]> {

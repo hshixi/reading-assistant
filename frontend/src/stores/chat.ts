@@ -124,10 +124,10 @@ export const useChatStore = defineStore('chat', {
         selection?: Selection
         excerptText?: string
       } = {},
-    ): Promise<void> {
-      if (this.isStreaming) return
+    ): Promise<number | null> {
+      if (this.isStreaming) return null
       const clean = text.trim()
-      if (!clean && !opts.imageDataUrl) return
+      if (!clean && !opts.imageDataUrl) return null
       const sessionId = await this.ensureSession()
       const bookId = this.bookId!
 
@@ -174,6 +174,8 @@ export const useChatStore = defineStore('chat', {
       this._abort = new AbortController()
       let acc = ''
       let finished = false
+      // V2.4：本次流中 AI 落库的记录 id（SSE save 事件给）。无落库则保持 null
+      let savedId: number | null = null
 
       try {
         await streamChat(
@@ -202,10 +204,11 @@ export const useChatStore = defineStore('chat', {
               assistantMsg.streaming = false
               assistantMsg.error = message
             },
-            onSave: ({ kind }) => {
+            onSave: ({ kind, id }) => {
               // M11：AI 摘抄/高亮已落库 → 刷新对应面板（notes/highlights）
               if (kind === 'note') void useNotesStore().refresh()
               else if (kind === 'highlight') void useReaderStore().loadHighlights()
+              savedId = id
             },
           },
           this._abort.signal,
@@ -226,6 +229,7 @@ export const useChatStore = defineStore('chat', {
         void this.refreshSessions()
         void finished
       }
+      return savedId
     },
 
     stop(): void {

@@ -13,16 +13,32 @@
         v-else
         class="note-page muted"
       >未定位</span>
+      <!-- V2.4：扫描区域笔记 → 截图留档徽标 -->
+      <span
+        v-if="note.screenshotRelPath"
+        class="note-badge"
+      >区域截图</span>
       <span class="note-time">{{ timeText }}</span>
-      <el-button
-        link
-        type="danger"
-        size="small"
-        class="note-delete"
-        @click.stop="onDelete"
-      >
-        删除
-      </el-button>
+      <span class="note-actions">
+        <el-button
+          link
+          type="primary"
+          size="small"
+          title="编辑批注"
+          @click.stop="startEdit"
+        >
+          <el-icon><EditPen /></el-icon>
+        </el-button>
+        <el-button
+          link
+          type="danger"
+          size="small"
+          class="note-delete"
+          @click.stop="onDelete"
+        >
+          删除
+        </el-button>
+      </span>
     </div>
     <!-- V2-F7：原文摘录（引文样式）置顶 -->
     <div
@@ -32,7 +48,50 @@
     >
       {{ excerpt }}
     </div>
+    <!-- V2.4：扫描区域笔记 → 框选截图缩略图（经后端路由加载；失效兜底文字） -->
     <div
+      v-if="regionThumbUrl"
+      class="note-region-thumb"
+    >
+      <img
+        :src="regionThumbUrl"
+        alt="框选截图"
+        loading="lazy"
+        @error="regionThumbUrl = null"
+      >
+    </div>
+
+    <!-- V2.4：行内批注编辑态 -->
+    <div v-if="editing">
+      <el-input
+        ref="editInputRef"
+        v-model="draftContent"
+        type="textarea"
+        :rows="3"
+        resize="none"
+        maxlength="2000"
+        placeholder="写下你的理解 / 批注…"
+      />
+      <div class="note-edit-actions">
+        <el-button
+          size="small"
+          @click="cancelEdit"
+        >
+          取消
+        </el-button>
+        <el-button
+          size="small"
+          type="primary"
+          :loading="saving"
+          :disabled="!draftContent.trim()"
+          @click="saveEdit"
+        >
+          保存批注
+        </el-button>
+      </div>
+    </div>
+    <div
+      v-else
       class="note-content"
       :class="{ empty: !content }"
     >
@@ -42,12 +101,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { computed, nextTick, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { EditPen } from '@element-plus/icons-vue'
 import type { Note } from '@reading/shared'
+import { bookRegionUrl } from '@/api/client'
+import { useNotesStore } from '@/stores/notes'
 
 const props = defineProps<{ note: Note }>()
 const emit = defineEmits<{ delete: [id: number]; jump: [page: number] }>()
+
+const notesStore = useNotesStore()
 
 const timeText = computed(() => {
   const d = new Date(props.note.createdAt)
@@ -60,6 +124,43 @@ const excerpt = computed(() => (props.note.excerptText ?? '').trim())
 
 /** 批注正文 */
 const content = computed(() => (props.note.content ?? '').trim())
+
+/* ---- V2.4：区域笔记截图缩略图（非截图记录为 null） ---- */
+const regionThumbUrl = ref<string | null>(
+  props.note.screenshotRelPath ? bookRegionUrl(props.note.bookId, props.note.screenshotRelPath) : null,
+)
+
+/* ---- V2.4：行内批注编辑（AI 转写原文 → 用户补批注），PATCH content 后原位替换 ---- */
+const editing = ref(false)
+const saving = ref(false)
+const draftContent = ref('')
+const editInputRef = ref<{ textarea?: HTMLTextAreaElement } | null>(null)
+
+function startEdit(): void {
+  draftContent.value = props.note.content ?? ''
+  editing.value = true
+  void nextTick().then(() => editInputRef.value?.textarea?.focus?.())
+}
+
+function cancelEdit(): void {
+  editing.value = false
+  draftContent.value = ''
+}
+
+async function saveEdit(): Promise<void> {
+  const c = draftContent.value.trim()
+  if (!c) return
+  saving.value = true
+  try {
+    await notesStore.update(props.note.id, c)
+    editing.value = false
+    ElMessage.success('批注已更新')
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : String(err))
+  } finally {
+    saving.value = false
+  }
+}
 
 function onJump(): void {
   if (props.note.pageNumber != null) emit('jump', props.note.pageNumber)
@@ -108,6 +209,7 @@ async function onDelete(): Promise<void> {
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+  flex-wrap: wrap;
 }
 .note-page {
   font-size: 12px;
@@ -120,12 +222,41 @@ async function onDelete(): Promise<void> {
   color: var(--el-text-color-secondary);
   background: var(--el-fill-color-lighter);
 }
+/* V2.4：区域笔记徽标（截图留档标识） */
+.note-badge {
+  font-size: 11px;
+  color: var(--el-color-danger);
+  background: var(--el-color-danger-light-9);
+  padding: 1px 8px;
+  border-radius: 999px;
+}
 .note-time {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
-.note-delete {
+.note-actions {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+/* V2.4：区域截图缩略图（与 excerpt 同宽整张展示） */
+.note-region-thumb {
+  margin-bottom: 8px;
+}
+.note-region-thumb img {
+  display: block;
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border: 1px solid var(--el-border-color);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+}
+.note-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 /* V2-F7：原文摘录引文样式（灰底 + 左竖线），同笔记的批注分开展示 */
 .note-excerpt {

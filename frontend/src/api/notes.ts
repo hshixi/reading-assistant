@@ -33,6 +33,20 @@ export async function createNote(input: NoteInput): Promise<Note> {
   return res.json()
 }
 
+/** V2.4：更新笔记（行内批注编辑用，主要改 content；后端 PATCH 同支持页码/原文/几何） */
+export async function updateNote(
+  id: number,
+  patch: { content?: string; excerptText?: string | null },
+): Promise<Note> {
+  const res = await fetch(`${baseUrl()}${ApiPaths.note(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) throw await parseApiError(res)
+  return res.json()
+}
+
 export async function deleteNote(id: number): Promise<void> {
   const res = await fetch(`${baseUrl()}${ApiPaths.note(id)}`, { method: 'DELETE' })
   if (!res.ok) throw await parseApiError(res)

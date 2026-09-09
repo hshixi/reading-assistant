@@ -43,6 +43,10 @@ export class Highlight {
   @Column({ name: 'excerpt_text', type: 'text', nullable: true })
   excerptText!: string | null
 
+  /** V2.4：区域/扫描类记录留档截图文件名（实际存 books/{bookId}/region/ 下）。非空 = 区域记录 */
+  @Column({ name: 'screenshot_rel_path', type: 'varchar', length: 512, nullable: true })
+  screenshotRelPath!: string | null
+
   @Column({ name: 'note_id', type: 'int', nullable: true })
   noteId!: number | null
 

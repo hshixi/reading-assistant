@@ -111,6 +111,8 @@ export interface Highlight {
   color: string
   /** 被高亮的原文摘录 */
   excerptText: string | null
+  /** V2.4：区域/扫描类记录留档截图文件名（存 books/{bookId}/region/ 下；非空 = 渲染为细边框区域而非文字高亮块） */
+  screenshotRelPath: string | null
   noteId: number | null
   createdAt: string
 }

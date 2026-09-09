@@ -12,7 +12,7 @@
       :style="rectStyle"
     />
     <div class="selection-hint">
-      按住拖拽框选要发送给 AI 的区域（Esc 取消）
+      按住拖拽框选区域（Esc 取消）
     </div>
   </div>
 </template>
@@ -21,11 +21,14 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Rect as SharedRect } from '@reading/shared'
 
-/** V2 框选截图结果：归一化矩形（shared Rect）+ PNG dataURL */
+/** V2 框选截图结果：归一化矩形（shared Rect）+ PNG dataURL + mouseup 视口坐标（定位迷你菜单用） */
 export interface SelectionResult {
   page: number
   rect: SharedRect
   imageDataUrl: string
+  /** V2.4：mouseup 视口坐标（Teleport 菜单锚点） */
+  vx: number
+  vy: number
 }
 
 const props = defineProps<{ active: boolean }>()
@@ -112,7 +115,7 @@ function onMove(e: MouseEvent): void {
   rect.value = { x: vx, y: vy, w: vw, h: vh }
 }
 
-function onUp(): void {
+function onUp(e: MouseEvent): void {
   window.removeEventListener('mouseup', onUp)
   if (!start.value || !rect.value) return
   const r = rect.value
@@ -121,7 +124,8 @@ function onUp(): void {
   pageBox.value = null
   if (r.w < 4 || r.h < 4) return
   const sel = captureSelection(r)
-  if (sel) emit('selection', sel)
+  // V2.4：附上 mouseup 视口坐标，ReaderView 据此把迷你菜单锚在选区旁
+  if (sel) emit('selection', { ...sel, vx: e.clientX, vy: e.clientY })
 }
 
 function onKeydown(e: KeyboardEvent): void {
@@ -132,11 +136,14 @@ function onKeydown(e: KeyboardEvent): void {
   }
 }
 
+/** captureSelection 产出不含锚点坐标（mouseup 后由 onUp 补 vx/vy） */
+type CapturedSelection = Omit<SelectionResult, 'vx' | 'vy'>
+
 /**
  * 把视口坐标选区换算到命中的页（选区与页边界求交），
  * 并按物理像素从源 canvas 截图，保证 Retina 2x 下与选区无偏移。
  */
-function captureSelection(sel: Rect): SelectionResult | null {
+function captureSelection(sel: Rect): CapturedSelection | null {
   const canvases = Array.from(document.querySelectorAll<HTMLCanvasElement>('.pdf-canvas'))
   let best: HTMLCanvasElement | null = null
   let bestRect: DOMRect | null = null

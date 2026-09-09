@@ -8,6 +8,7 @@ import {
   createNote as apiCreateNote,
   deleteNote as apiDeleteNote,
   listNotes,
+  updateNote as apiUpdateNote,
   type NoteInput,
 } from '@/api/notes'
 
@@ -43,6 +44,12 @@ export const useNotesStore = defineStore('notes', {
     async remove(id: number): Promise<void> {
       await apiDeleteNote(id)
       this.notes = this.notes.filter((n) => n.id !== id)
+    },
+    /** V2.4：行内批注编辑（AI 转写原文 + 用户补写/改批注）—— PATCH 后原位替换 */
+    async update(id: number, content: string): Promise<void> {
+      const updated = await apiUpdateNote(id, { content })
+      const i = this.notes.findIndex((n) => n.id === id)
+      if (i >= 0) this.notes.splice(i, 1, updated)
     },
   },
 })

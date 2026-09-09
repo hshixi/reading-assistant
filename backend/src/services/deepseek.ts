@@ -35,6 +35,28 @@ const SYSTEM_PROMPTS: Record<ActionType | 'chat', string> = {
   chat: '你是阅读助手。结合图片与文字内容，用中文简洁准确地回答用户的问题。',
 }
 
+/**
+ * V2.4 扫描版区域提取：note/highlight 动作带图（框选区域）且无文字原文 excerpt →
+ * 需要把图中文字**逐字转写**为 excerpt（而非概括/整理）；content 按用户要求整理，
+ * 无要求则同原文。普通动作（无图或有 excerpt）走上面的 SYSTEM_PROMPTS。
+ */
+const EXTRACTION_PROMPTS: Record<'note' | 'highlight', string> = {
+  note:
+    '你是 OCR 与笔记助手。仔细阅读图中被框选区域的文字，把原文逐字转写（不改写、不省略、不概括、不要加自己的解释）。' +
+    '以 JSON 返回：{"type":"note","excerpt":"<逐字转写的原文>","content":"<用户要求的批注整理；若未要求整理则与 excerpt 相同>"}，不要输出任何其他文字。',
+  highlight:
+    '你是 OCR 与摘录助手。仔细阅读图中被框选区域的文字，把原文逐字转写（不改写、不省略、不概括、不要加自己的解释），' +
+    '以 JSON 返回：{"type":"highlight","excerpt":"<逐字转写的原文>"}，不要输出任何其他文字。',
+}
+
+function systemPromptFor(input: DeepSeekInput): string {
+  const action = input.action ?? 'chat'
+  if ((action === 'note' || action === 'highlight') && input.imageDataUrl && !input.excerptText) {
+    return EXTRACTION_PROMPTS[action]
+  }
+  return SYSTEM_PROMPTS[action]
+}
+
 export interface DeepSeekInput {
   sessionId: number
   /** 当前用户消息 id：历史查询时排除，避免与当前消息重复 */
@@ -83,7 +105,7 @@ async function buildMessages(
   input: DeepSeekInput,
   settings: ResolvedAiSettings,
 ): Promise<OpenAiMessage[]> {
-  const system = SYSTEM_PROMPTS[input.action ?? 'chat']
+  const system = systemPromptFor(input)
   const history = await getRepository(ChatMessage).find({
     where: { sessionId: input.sessionId, id: LessThan(input.excludeMessageId) },
     order: { id: 'ASC' },

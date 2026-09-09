@@ -54,4 +54,10 @@ export function bookCoverUrl(id: number): string {
   return `${baseUrl()}${ApiPaths.bookCover(id)}`
 }
 
+/** V2.4：区域截图静态地址（file 为 books/{bookId}/region/ 下文件名，后端白名单校验）。
+ *  file:// 渲染层不能直接读本地文件，须经后端 http 路由转发。 */
+export function bookRegionUrl(id: number, file: string): string {
+  return `${baseUrl()}${ApiPaths.bookRegionFile(id, file)}`
+}
+
 export { ApiPaths }

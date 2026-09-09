@@ -223,6 +223,31 @@ export function createBooksRouter(context: AppContext): Router {
     }
   })
 
+  // GET /api/books/:id/region/:file —— V2.4 区域截图（扫描版框选留档；渲染层 file:// 不能直接读本地文件）
+  router.get(
+    ApiPaths.bookRegionFile(':id', ':file'),
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const book = await loadBookOr404(getRepository(Book), Number(req.params.id))
+        const file = req.params.file ?? ''
+        // 白名单文件名（region-store 只产 <数字>-<hex>.png），杜绝目录穿越/任意文件读取
+        if (!/^[\w.-]+\.png$/.test(file)) throw new ApiError(404, 'REGION_NOT_FOUND', '资源不存在')
+        const filePath = path.join(store.regionDir(book.id), file)
+        if (!filePath.startsWith(store.regionDir(book.id) + path.sep)) {
+          throw new ApiError(404, 'REGION_NOT_FOUND', '资源不存在')
+        }
+        if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+          throw new ApiError(404, 'REGION_NOT_FOUND', '截图不存在')
+        }
+        res.setHeader('Content-Type', 'image/png')
+        res.setHeader('Cache-Control', 'public, max-age=86400')
+        fs.createReadStream(filePath).pipe(res)
+      } catch (err) {
+        next(err)
+      }
+    },
+  )
+
   // PATCH /api/books/:id —— 改标题/作者/阅读进度
   router.patch(ApiPaths.book(':id'), async (req: Request, res: Response, next: NextFunction) => {
     try {

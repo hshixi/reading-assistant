@@ -9,6 +9,8 @@ export const ApiPaths = {
   book: (id: number | string) => `/books/${id}`,
   bookFile: (id: number | string) => `/books/${id}/file`,
   bookCover: (id: number | string) => `/books/${id}/cover`,
+  /** V2.4：区域截图静态资源（file 为 books/{bookId}/region/ 下的文件名） */
+  bookRegionFile: (id: number | string, file: string) => `/books/${id}/region/${file}`,
 
   sessionsForBook: (bookId: number | string) => `/books/${bookId}/sessions`,
   session: (id: number | string) => `/sessions/${id}`,

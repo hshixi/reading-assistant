@@ -62,6 +62,7 @@ function highlightToDto(h: Highlight): HighlightDto {
     rects: normalizeRects(h.rects, []) ?? [],
     color: h.color,
     excerptText: h.excerptText,
+    screenshotRelPath: h.screenshotRelPath,
     noteId: h.noteId,
     createdAt: (h.createdAt as Date).toISOString(),
   }
@@ -271,6 +272,7 @@ export function createHighlightsRouter(): Router {
             rects,
             color: typeof req.body?.color === 'string' ? req.body.color : 'yellow',
             excerptText: strOrNull(req.body?.excerptText),
+            screenshotRelPath: strOrNull(req.body?.screenshotRelPath),
             noteId: req.body?.noteId != null ? numOr(req.body.noteId, 0) : null,
           }),
         )
@@ -300,6 +302,9 @@ export function createHighlightsRouter(): Router {
       if (req.body?.color != null) patch.color = String(req.body.color)
       const excerpt = strOrNull(req.body?.excerptText)
       if (req.body?.excerptText !== undefined) patch.excerptText = excerpt
+      if (req.body?.screenshotRelPath !== undefined) {
+        patch.screenshotRelPath = strOrNull(req.body.screenshotRelPath)
+      }
       if (req.body?.pageNumber != null) patch.pageNumber = numOr(req.body.pageNumber, 0)
       const rects = rectsFromBody(req.body?.rects)
       if (rects === undefined) throw new ApiError(400, 'BAD_RECT', 'rects 格式非法')
