@@ -1,6 +1,6 @@
 {
   "name": "@reading/shared",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "前后端共享 DTO 类型与常量",
   "main": "dist/index.js",
