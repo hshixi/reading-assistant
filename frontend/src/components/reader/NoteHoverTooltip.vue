@@ -1,4 +1,5 @@
 <template>
+  <!-- eslint-disable vue/no-v-html -- 仅一处在 v-html="renderedNote"，由 @/utils/markdown 生成（marked → KaTeX → DOMPurify） -->
   <Teleport to="body">
     <div
       v-if="note"
@@ -8,7 +9,15 @@
       <div class="note-tt-page">
         第 {{ note.pageNumber }} 页笔记
       </div>
-      <div class="note-tt-body">
+      <div
+        v-if="hasContent"
+        class="note-tt-body markdown-body"
+        v-html="renderedNote"
+      />
+      <div
+        v-else
+        class="note-tt-body"
+      >
         {{ body }}
       </div>
     </div>
@@ -19,6 +28,7 @@
 import { computed } from 'vue'
 import type { Note } from '@reading/shared'
 import { useNotesStore } from '@/stores/notes'
+import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps<{
   /** 是否展示 */
@@ -36,11 +46,15 @@ const note = computed<Note | null>(() => {
   return notesStore.notes.find((n) => n.id === props.noteId) ?? null
 })
 
+/** 有批注时按 markdown 渲染（与笔记面板一致）；无批注回退显示原文摘录（纯文本） */
+const content = computed(() => note.value?.content?.trim() ?? '')
+const hasContent = computed(() => content.value.length > 0)
+const renderedNote = computed(() => renderMarkdown(content.value))
+
 /** 悬浮窗正文：批注优先，无批注显示原文摘录 */
 const body = computed(() => {
-  const content = note.value?.content?.trim()
+  if (content.value) return content.value
   const excerpt = note.value?.excerptText?.trim()
-  if (content) return content
   if (excerpt) return excerpt
   return '（无内容）'
 })
@@ -71,5 +85,9 @@ const body = computed(() => {
   font-size: 12px;
   line-height: 1.6;
   color: var(--el-text-color-primary);
+}
+/* 外层 pre-wrap 是给摘录纯文本用的；markdown 渲染结果不能继承，否则标签间换行会变成空行 */
+.note-tt-body.markdown-body {
+  white-space: normal;
 }
 </style>

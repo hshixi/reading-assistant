@@ -1,5 +1,5 @@
 <template>
-  <!-- eslint-disable vue/no-v-html -- 仅一处在 v-html="rendered"，rendered 经 DOMPurify.sanitize（marked 输出） -->
+  <!-- eslint-disable vue/no-v-html -- 仅一处在 v-html="rendered"，rendered 由 @/utils/markdown 生成（marked → KaTeX → DOMPurify） -->
   <div
     class="message"
     :class="msg.role"
@@ -69,10 +69,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import type { ActionType } from '@reading/shared'
 import type { LocalMessage } from '@/stores/chat'
+import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps<{ msg: LocalMessage }>()
 
@@ -88,14 +87,7 @@ function actionLabel(a: ActionType): string {
   return ACTION_LABELS[a] ?? a
 }
 
-const rendered = computed(() => {
-  const md = props.msg.content || ''
-  try {
-    return DOMPurify.sanitize(marked.parse(md) as string)
-  } catch {
-    return md
-  }
-})
+const rendered = computed(() => renderMarkdown(props.msg.content || ''))
 </script>
 
 <style scoped>
@@ -137,28 +129,7 @@ const rendered = computed(() => {
   border: 1px solid var(--el-border-color-lighter);
   display: block;
 }
-.msg-text :deep(p) {
-  margin: 0 0 8px;
-}
-.msg-text :deep(p:last-child) {
-  margin-bottom: 0;
-}
-.msg-text :deep(pre) {
-  background: var(--el-fill-color-lighter);
-  padding: 10px;
-  border-radius: 6px;
-  overflow-x: auto;
-  font-size: 13px;
-}
-.msg-text :deep(code) {
-  background: rgba(127, 127, 127, 0.12);
-  padding: 1px 4px;
-  border-radius: 3px;
-}
-.msg-text :deep(pre code) {
-  background: none;
-  padding: 0;
-}
+/* 正文内 markdown（段落/标题/列表/表格/公式）统一由 styles/markdown.css 提供 */
 /* V2.1-P2：用户消息「选中原文」引用块 —— 历史回看能定位问的是哪段内容 */
 .msg-excerpt {
   margin-top: 8px;

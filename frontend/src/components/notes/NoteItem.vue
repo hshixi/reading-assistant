@@ -1,4 +1,5 @@
 <template>
+  <!-- eslint-disable vue/no-v-html -- 仅一处在 v-html="renderedContent"，由 @/utils/markdown 生成（marked → KaTeX → DOMPurify） -->
   <div
     class="note-item"
     :data-note-id="note.id"
@@ -91,11 +92,15 @@
       </div>
     </div>
     <div
+      v-else-if="content"
+      class="note-content markdown-body"
+      v-html="renderedContent"
+    />
+    <div
       v-else
-      class="note-content"
-      :class="{ empty: !content }"
+      class="note-content empty"
     >
-      {{ content || '（无批注）' }}
+      （无批注）
     </div>
   </div>
 </template>
@@ -107,6 +112,7 @@ import { EditPen } from '@element-plus/icons-vue'
 import type { Note } from '@reading/shared'
 import { bookRegionUrl } from '@/api/client'
 import { useNotesStore } from '@/stores/notes'
+import { renderMarkdown } from '@/utils/markdown'
 
 const props = defineProps<{ note: Note }>()
 const emit = defineEmits<{ delete: [id: number]; jump: [page: number] }>()
@@ -124,6 +130,9 @@ const excerpt = computed(() => (props.note.excerptText ?? '').trim())
 
 /** 批注正文 */
 const content = computed(() => (props.note.content ?? '').trim())
+
+/** 批注正文渲染：AI「整理成笔记」产出的是 markdown/LaTeX，用户批注也能正常显示 */
+const renderedContent = computed(() => renderMarkdown(content.value))
 
 /* ---- V2.4：区域笔记截图缩略图（非截图记录为 null） ---- */
 const regionThumbUrl = ref<string | null>(
@@ -279,7 +288,6 @@ async function onDelete(): Promise<void> {
   font-size: 13px;
   line-height: 1.6;
   color: var(--el-text-color-primary);
-  white-space: pre-wrap;
   word-break: break-word;
 }
 .note-content.empty {

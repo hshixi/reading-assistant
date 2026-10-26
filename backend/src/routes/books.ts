@@ -215,9 +215,13 @@ export function createBooksRouter(context: AppContext): Router {
         // 存在失败哨兵或封面仍缺失 → 前端占位图标（避免每次开书架反复尝试损坏文件）
         throw new ApiError(404, 'COVER_UNAVAILABLE', '封面不可用')
       }
-      res.setHeader('Content-Type', 'image/png')
-      res.setHeader('Cache-Control', 'public, max-age=86400')
-      fs.createReadStream(coverPath).pipe(res)
+      // 封面按 book id 存盘，但 id 会在「删书后导入新书」时被复用，且封面可能因懒生成
+      // 重试而变。给长 max-age 会让渲染层把旧封面钉在新书上（换库/换书都踩过），因此
+      // 改为每次条件校验：sendFile 自带 ETag + Last-Modified，未变时走 304，不重复传图。
+      res.setHeader('Cache-Control', 'no-cache')
+      res.sendFile(coverPath, (err) => {
+        if (err && !res.headersSent) next(err)
+      })
     } catch (err) {
       next(err)
     }

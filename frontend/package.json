@@ -1,6 +1,6 @@
 {
   "name": "@reading/frontend",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "Vue3 渲染层（阅读器 + 聊天 + 书架 + 设置）",
@@ -14,6 +14,7 @@
     "@reading/shared": "*",
     "dompurify": "^3.4.14",
     "element-plus": "^2.9.1",
+    "katex": "^0.19.1",
     "marked": "^18.0.11",
     "pdfjs-dist": "^5.7.284",
     "pinia": "^2.3.0",

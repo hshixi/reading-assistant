@@ -49,12 +49,21 @@ const EXTRACTION_PROMPTS: Record<'note' | 'highlight', string> = {
     '以 JSON 返回：{"type":"highlight","excerpt":"<逐字转写的原文>"}，不要输出任何其他文字。',
 }
 
+/**
+ * 公式书写约定：前端用 KaTeX 渲染，只认 LaTeX 定界符。
+ * 逐字转写（OCR）场景不追加，避免把原文符号改写成 LaTeX。
+ */
+const MATH_RULE =
+  ' 数学公式请用 LaTeX 书写：行内用 $...$ 包裹，独立成行的公式用 $$...$$ 包裹，不要在公式两侧加反引号或方括号。'
+const MATH_ACTIONS: ReadonlySet<ActionType | 'chat'> = new Set(['chat', 'explain', 'note'])
+
 function systemPromptFor(input: DeepSeekInput): string {
   const action = input.action ?? 'chat'
   if ((action === 'note' || action === 'highlight') && input.imageDataUrl && !input.excerptText) {
     return EXTRACTION_PROMPTS[action]
   }
-  return SYSTEM_PROMPTS[action]
+  const prompt = SYSTEM_PROMPTS[action]
+  return MATH_ACTIONS.has(action) ? prompt + MATH_RULE : prompt
 }
 
 export interface DeepSeekInput {

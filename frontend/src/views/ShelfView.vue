@@ -65,6 +65,7 @@
           :book-id="book.id"
           :title="book.title"
           :progress="progressOf(book)"
+          :version="book.createdAt"
         />
         <!-- V2.5：meta 精简两行 —— 行1 文件名 + 右对齐笔记数；行2 页数 · 阅读进度 -->
         <div class="book-meta">

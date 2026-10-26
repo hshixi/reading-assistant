@@ -43,7 +43,13 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Document, Loading } from '@element-plus/icons-vue'
 import { bookCoverUrl } from '@/api/client'
 
-const props = defineProps<{ bookId: number; title: string; progress?: number | null }>()
+const props = defineProps<{
+  bookId: number
+  title: string
+  progress?: number | null
+  /** 封面缓存版本（传书籍 createdAt；id 复用时不命中旧封面） */
+  version?: string | null
+}>()
 
 /** 填充宽度：clamp 0–100（lastPage 偶发超过 pageCount 时封顶，避免条溢出） */
 const fillWidth = computed(() => `${Math.max(0, Math.min(100, props.progress ?? 0))}%`)
@@ -54,8 +60,9 @@ const state = ref<CoverState>('loading')
 const attempt = ref(0)
 /** 尝试数 >0 时追加时间戳参数绕过浏览器对旧失败/旧资源的缓存 */
 const coverUrl = computed(() => {
-  const u = bookCoverUrl(props.bookId)
-  return attempt.value === 0 ? u : `${u}?t=${Date.now()}`
+  const u = bookCoverUrl(props.bookId, props.version)
+  if (attempt.value === 0) return u
+  return `${u}${u.includes('?') ? '&' : '?'}t=${Date.now()}`
 })
 
 /** 兜底：挂载后若图片已就绪（浏览器缓存同步命中时 load 可能先于监听绑定）直接置 ok */
