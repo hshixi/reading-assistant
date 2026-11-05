@@ -9,6 +9,7 @@ import path from 'node:path'
 import { loadConfig } from './config'
 import { initDatabase } from './db'
 import { createApp } from './app'
+import { redactError } from './utils/redact'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -25,7 +26,7 @@ async function main(): Promise<void> {
     try {
       fs.writeFileSync(path.join(config.dataDir, 'backend.port'), String(actualPort))
     } catch (err) {
-      console.error('[backend] 写端口文件失败:', err)
+      console.error('[backend] 写端口文件失败:', redactError(err))
     }
     console.log(`[backend] listening on http://${config.host}:${actualPort}`)
     console.log(`[backend] dataDir=${config.dataDir}`)
@@ -33,6 +34,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('[backend] fatal:', err)
+  console.error('[backend] fatal:', redactError(err))
   process.exit(1)
 })

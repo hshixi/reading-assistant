@@ -3,6 +3,7 @@
  */
 import type { NextFunction, Request, Response } from 'express'
 import type { ApiErrorBody } from '@reading/shared'
+import { redactError } from '../utils/redact'
 
 export class ApiError extends Error {
   constructor(
@@ -40,7 +41,7 @@ export function errorHandler(
     return
   }
 
-  console.error('[error]', err)
+  console.error('[error]', redactError(err))
   const body: ApiErrorBody = { error: { code: 'INTERNAL', message: '服务器内部错误' } }
   res.status(500).json(body)
 }
