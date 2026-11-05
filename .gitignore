@@ -20,6 +20,30 @@ coverage/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+
+# Secrets / signing material
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+
+# Local test data & user content（书籍/数据库/笔记绝不入库）
+*.pdf
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+test-data/
+fixtures/
+samples/
+
+# Local Claude Code settings（plans 可入库，个人设置不入库）
+.claude/settings.local.json
 
 # macOS
 .DS_Store
@@ -35,3 +59,5 @@ npm-debug.log*
 
 # Electron build artifacts (dmg/zip)
 release/
+*.dmg
+*.blockmap
